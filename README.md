@@ -1,9 +1,9 @@
 # OfferTracker Backend
 
-## 1️⃣ What is OfferTracker?
-**OfferTracker Backend** is a FastAPI-based career intelligence API that tracks job applications, interview stages, resume versions, outcomes, and reflections — and turns them into actionable analytics. 
+## 1. What is OfferTracker?
+OfferTracker Backend is a FastAPI-based career intelligence API that tracks job applications, interview stages, resume versions, outcomes, and reflections — and turns them into actionable analytics. 
 
-## 2️⃣ The Problem It Solves
+## 2. The Problem It Solves
 Most job seekers:
 - Apply blindly and forget interview feedback.
 - Don't track resume changes.
@@ -12,10 +12,10 @@ Most job seekers:
 
 OfferTracker solves this by acting as a structured system for capturing, analyzing, and improving your job search strategy. It treats job hunting as a product experiment, a performance pipeline, and a measurable growth system instead of an emotional rollercoaster.
 
-## 3️⃣ Conceptual Model & Database Design
+## 3. Conceptual Model & Database Design
 The backend models the complete job search lifecycle:
 
-`Company` → `Job Posting` → `Application` → `Stages` → `Outcome` → `Reflection`
+`Company` -> `Job Posting` -> `Application` -> `Stages` -> `Outcome` -> `Reflection`
 
 Additionally:
 - `ResumeVersion` is linked directly to the `Application`.
@@ -30,7 +30,18 @@ Additionally:
 - **Outcome**: Final result of the application (e.g., Offer, Rejected, Withdrawn).
 - **Reflection**: Post-mortem analysis capturing what worked, what failed, categorized skill gaps, and an improvement plan.
 
-## 4️⃣ Architecture & Philosophy
+## 4. API Controllers (Routers)
+The API is divided into several controllers, each managing a specific part of the job search lifecycle:
+
+- **Companies Controller**: Manages organizational data. Handles creating, updating, and retrieving companies you are targeting.
+- **Jobs Controller**: Manages specific job postings associated with companies. Stores job descriptions, URLs, and specific requirements.
+- **Resumes Controller**: Manages different versions of your resume. This allows the system to track which resume version performs best for specific industries or roles.
+- **Applications Controller**: The central hub of the API. It manages the connection between a job, a resume, and the current status.
+    - **Stages Sub-controller**: Tracks individual interview rounds and feedback for a specific application.
+    - **Outcome Sub-controller**: Records the final result and rejection reasons for categorization.
+    - **Reflection Sub-controller**: Stores post-interview reflections, skill gap analysis, and future improvement plans.
+
+## 5. Architecture & Philosophy
 Built with Domain-Driven Design (DDD), the backend is heavily modularized to maintain cleanly separated layers:
 - **Models** (`app/models/`): SQLAlchemy 2.0 declarative ORM models.
 - **Schemas** (`app/schemas/`): Pydantic V2 schemas governing strict request validation and response serialization.
@@ -40,7 +51,7 @@ Built with Domain-Driven Design (DDD), the backend is heavily modularized to mai
 
 This architecture ensures the system is not just a standard CRUD app, but an insight-oriented analytics engine. It's built to scale seamlessly, support robust analytics from day one, and easily integrate AI services later.
 
-## 5️⃣ Tech Stack
+## 6. Tech Stack
 - **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (High-performance async web framework)
 - **Database**: PostgreSQL
 - **ORM**: [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (Async operations & connection pooling)
@@ -48,7 +59,7 @@ This architecture ensures the system is not just a standard CRUD app, but an ins
 - **Validation & Settings**: [Pydantic V2 & Pydantic-Settings](https://docs.pydantic.dev/latest/)
 - **Testing**: Pytest & HTTPX (with an in-memory async SQLite fixture for lightning-fast testing)
 
-## 6️⃣ How to Setup and Run
+## 7. How to Setup and Run
 
 ### Prerequisites
 - Python 3.12+
@@ -82,7 +93,6 @@ Run Alembic migrations to apply the schema to your database:
 ```bash
 alembic upgrade head
 ```
-*(If this is the first time setting up and migrations aren't checked in, generate the initial migration first via `export PYTHONPATH=. && alembic revision --autogenerate -m "Init"`)*
 
 ### Running the Application
 
@@ -102,7 +112,7 @@ export PYTHONPATH=.
 pytest tests/ -v
 ```
 
-## 7️⃣ Future Scope
+## 8. Future Scope
 - **Advanced Analytics Endpoints**: Aggregate data to map out success rates by resume version, time-to-offer metrics, and interview stage conversion rates.
 - **Authentication Strategy**: Implement OAuth2 with JWT tokens to secure endpoints.
 - **AI Integrations**: Implement NLP summarization of reflection insights to automatically extract trending skill gaps dynamically.
