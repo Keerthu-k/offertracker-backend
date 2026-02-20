@@ -4,7 +4,8 @@ from app.core.config import settings
 engine = create_async_engine(
     settings.async_database_uri,
     echo=True,
-    future=True
+    future=True,
+    connect_args={"check_same_thread": False} if "sqlite" in settings.async_database_uri else {}
 )
 
 async_session_maker = async_sessionmaker(
