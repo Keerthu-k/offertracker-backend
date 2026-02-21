@@ -81,21 +81,29 @@ class ReflectionResponse(ReflectionBase):
 # Application
 # ---------------
 class ApplicationBase(BaseModel):
+    company_name: str = Field(..., max_length=255)
+    role_title: str = Field(..., max_length=255)
+    applied_source: Optional[str] = Field(None, max_length=255)
+    url: Optional[str] = Field(None, max_length=500)
+    description: Optional[str] = None
     status: str = Field(default="Applied", max_length=50)
     applied_date: Optional[date] = None
 
 class ApplicationCreate(ApplicationBase):
-    job_posting_id: str
     resume_version_id: Optional[str] = None
 
 class ApplicationUpdate(BaseModel):
+    company_name: Optional[str] = Field(None, max_length=255)
+    role_title: Optional[str] = Field(None, max_length=255)
+    applied_source: Optional[str] = Field(None, max_length=255)
+    url: Optional[str] = Field(None, max_length=500)
+    description: Optional[str] = None
     status: Optional[str] = Field(None, max_length=50)
     applied_date: Optional[date] = None
     resume_version_id: Optional[str] = None
 
 class ApplicationResponse(ApplicationBase):
     id: str
-    job_posting_id: str
     resume_version_id: Optional[str] = None
     applied_date: date
     created_at: datetime

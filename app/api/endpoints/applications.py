@@ -27,10 +27,6 @@ async def create_application(
     application_in: schemas.ApplicationCreate,
 ) -> Any:
     """Create new application."""
-    job = await crud.job_posting.get(db=db, id=application_in.job_posting_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job posting not found")
-    
     if application_in.resume_version_id:
         resume = await crud.resume_version.get(db=db, id=application_in.resume_version_id)
         if not resume:
