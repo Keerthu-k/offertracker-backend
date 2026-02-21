@@ -9,12 +9,16 @@ class Application(Base, TimestampMixin):
     __tablename__ = "applications"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
-    job_posting_id: Mapped[str] = mapped_column(ForeignKey("job_postings.id"), nullable=False)
+    company_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    role_title: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    applied_source: Mapped[Optional[str]] = mapped_column(String(255))
+    url: Mapped[Optional[str]] = mapped_column(String(500))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    
     resume_version_id: Mapped[str] = mapped_column(ForeignKey("resume_versions.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="Applied")
     applied_date: Mapped[date] = mapped_column(Date, server_default=func.current_date())
     
-    job_posting: Mapped["JobPosting"] = relationship(back_populates="applications")
     resume_version: Mapped[Optional["ResumeVersion"]] = relationship(back_populates="applications")
     stages: Mapped[List["ApplicationStage"]] = relationship(back_populates="application", cascade="all, delete-orphan")
     outcome: Mapped[Optional["Outcome"]] = relationship(back_populates="application", cascade="all, delete-orphan", uselist=False)

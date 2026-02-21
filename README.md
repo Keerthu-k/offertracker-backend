@@ -15,15 +15,13 @@ OfferTracker solves this by acting as a structured system for capturing, analyzi
 ## 3. Conceptual Model & Database Design
 The backend models the complete job search lifecycle:
 
-`Company` -> `Job Posting` -> `Application` -> `Stages` -> `Outcome` -> `Reflection`
+`Application (Company + Role)` -> `Stages` -> `Outcome` -> `Reflection`
 
 Additionally:
 - `ResumeVersion` is linked directly to the `Application`.
 - **Analytics** are derived from the aggregated data.
 
 ### Core Domain Objects
-- **Company**: Where you applied.
-- **JobPosting**: The specific role and its requirements.
 - **ResumeVersion**: Snapshot of the specific resume used for that application.
 - **Application**: The main entity connecting the job, resume, and application lifecycle.
 - **ApplicationStage**: Progress steps (e.g., Recruiter Call, Technical Screen).
@@ -33,10 +31,8 @@ Additionally:
 ## 4. API Controllers (Routers)
 The API is divided into several controllers, each managing a specific part of the job search lifecycle:
 
-- **Companies Controller**: Manages organizational data. Handles creating, updating, and retrieving companies you are targeting.
-- **Jobs Controller**: Manages specific job postings associated with companies. Stores job descriptions, URLs, and specific requirements.
 - **Resumes Controller**: Manages different versions of your resume. This allows the system to track which resume version performs best for specific industries or roles.
-- **Applications Controller**: The central hub of the API. It manages the connection between a job, a resume, and the current status.
+- **Applications Controller**: The central hub of the API. It manages the connection between an application (company, role, description) and the current status.
     - **Stages Sub-controller**: Tracks individual interview rounds and feedback for a specific application.
     - **Outcome Sub-controller**: Records the final result and rejection reasons for categorization.
     - **Reflection Sub-controller**: Stores post-interview reflections, skill gap analysis, and future improvement plans.
@@ -53,7 +49,7 @@ This architecture ensures the system is not just a standard CRUD app, but an ins
 
 ## 6. Tech Stack
 - **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (High-performance async web framework)
-- **Database**: PostgreSQL
+- **Database**: SQLite (for simple local development)
 - **ORM**: [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (Async operations & connection pooling)
 - **Migrations**: [Alembic](https://alembic.sqlalchemy.org/)
 - **Validation & Settings**: [Pydantic V2 & Pydantic-Settings](https://docs.pydantic.dev/latest/)
@@ -63,7 +59,6 @@ This architecture ensures the system is not just a standard CRUD app, but an ins
 
 ### Prerequisites
 - Python 3.12+
-- A running PostgreSQL server.
 
 ### Installation
 
@@ -85,9 +80,9 @@ This architecture ensures the system is not just a standard CRUD app, but an ins
    ```
 
 ### Database Configuration
-Ensure your local PostgreSQL database is running. Create a database named `offertracker` (or customize the connection variables in `app/core/config.py`).
+The application is configured to use a local SQLite database file out-of-the-box (`offertracker.db`) for simple local development.
 
-By default, the application connects to: `postgresql+asyncpg://postgres:postgres@localhost:5432/offertracker`.
+By default, the application connects to: `sqlite+aiosqlite:///./offertracker.db`.
 
 Run Alembic migrations to apply the schema to your database:
 ```bash
