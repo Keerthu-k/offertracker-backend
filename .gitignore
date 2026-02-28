@@ -1,3 +1,7 @@
+.env
 venv/
 __pycache__/
 .pytest_cache/
+api_schema_for_frontend.md
+*.db
+.env

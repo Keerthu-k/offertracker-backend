@@ -1,25 +1,53 @@
+from typing import Any, Dict, List, Optional
+
+from supabase import Client
+
 from app.crud.crud_base import CRUDBase
-from app.models.application import Application, ApplicationStage, Outcome, Reflection
-from app.schemas.application import (
-    ApplicationCreate, ApplicationUpdate,
-    ApplicationStageCreate, ApplicationStageUpdate,
-    OutcomeCreate, OutcomeUpdate,
-    ReflectionCreate, ReflectionUpdate
-)
 
-class CRUDApplication(CRUDBase[Application, ApplicationCreate, ApplicationUpdate]):
-    pass
 
-class CRUDApplicationStage(CRUDBase[ApplicationStage, ApplicationStageCreate, ApplicationStageUpdate]):
-    pass
+class CRUDApplication(CRUDBase):
+    """Application-specific helpers (e.g. fetch with nested relations)."""
 
-class CRUDOutcome(CRUDBase[Outcome, OutcomeCreate, OutcomeUpdate]):
-    pass
+    def get_with_relations(self, db: Client, id: str) -> Optional[Dict[str, Any]]:
+        resp = (
+            db.table(self.table_name)
+            .select("*, application_stages(*), outcomes(*), reflections(*)")
+            .eq("id", id)
+            .maybe_single()
+            .execute()
+        )
+        if not resp.data:
+            return None
+        row = resp.data
+        # Normalise: rename PostgREST keys to what the schema expects
+        row["stages"] = row.pop("application_stages", []) or []
+        outcomes = row.pop("outcomes", None) or []
+        row["outcome"] = outcomes[0] if isinstance(outcomes, list) and outcomes else (outcomes if not isinstance(outcomes, list) else None)
+        reflections_list = row.pop("reflections", None) or []
+        row["reflection"] = reflections_list[0] if isinstance(reflections_list, list) and reflections_list else (reflections_list if not isinstance(reflections_list, list) else None)
+        return row
 
-class CRUDReflection(CRUDBase[Reflection, ReflectionCreate, ReflectionUpdate]):
-    pass
+    def get_multi_with_relations(
+        self, db: Client, *, skip: int = 0, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        resp = (
+            db.table(self.table_name)
+            .select("*, application_stages(*), outcomes(*), reflections(*)")
+            .range(skip, skip + limit - 1)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        rows: list = resp.data or []
+        for row in rows:
+            row["stages"] = row.pop("application_stages", []) or []
+            outcomes = row.pop("outcomes", None) or []
+            row["outcome"] = outcomes[0] if outcomes else None
+            reflections_list = row.pop("reflections", None) or []
+            row["reflection"] = reflections_list[0] if reflections_list else None
+        return rows
 
-application = CRUDApplication(Application)
-application_stage = CRUDApplicationStage(ApplicationStage)
-outcome = CRUDOutcome(Outcome)
-reflection = CRUDReflection(Reflection)
+
+application = CRUDApplication("applications")
+application_stage = CRUDBase("application_stages")
+outcome = CRUDBase("outcomes")
+reflection = CRUDBase("reflections")

@@ -24,7 +24,8 @@ from app.core.config import settings
 from app.models.base import Base
 
 target_metadata = Base.metadata
-config.set_main_option("sqlalchemy.url", settings.async_database_uri)
+# Escape % for ConfigParser interpolation (URL-encoded passwords contain %)
+config.set_main_option("sqlalchemy.url", settings.async_database_uri.replace("%", "%%"))
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
