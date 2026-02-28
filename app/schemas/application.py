@@ -83,6 +83,7 @@ class ReflectionResponse(ReflectionBase):
 class ApplicationBase(BaseModel):
     company_name: str = Field(..., max_length=255)
     role_title: str = Field(..., max_length=255)
+    location: Optional[str] = Field(None, max_length=255)
     applied_source: Optional[str] = Field(None, max_length=255)
     url: Optional[str] = Field(None, max_length=500)
     description: Optional[str] = None
@@ -95,6 +96,7 @@ class ApplicationCreate(ApplicationBase):
 class ApplicationUpdate(BaseModel):
     company_name: Optional[str] = Field(None, max_length=255)
     role_title: Optional[str] = Field(None, max_length=255)
+    location: Optional[str] = Field(None, max_length=255)
     applied_source: Optional[str] = Field(None, max_length=255)
     url: Optional[str] = Field(None, max_length=500)
     description: Optional[str] = None

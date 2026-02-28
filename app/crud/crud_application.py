@@ -19,20 +19,28 @@ class CRUDApplication(CRUDBase):
         if not resp.data:
             return None
         row = resp.data
-        # Normalise: rename PostgREST keys to what the schema expects
         row["stages"] = row.pop("application_stages", []) or []
         outcomes = row.pop("outcomes", None) or []
-        row["outcome"] = outcomes[0] if isinstance(outcomes, list) and outcomes else (outcomes if not isinstance(outcomes, list) else None)
+        row["outcome"] = (
+            outcomes[0]
+            if isinstance(outcomes, list) and outcomes
+            else (outcomes if not isinstance(outcomes, list) else None)
+        )
         reflections_list = row.pop("reflections", None) or []
-        row["reflection"] = reflections_list[0] if isinstance(reflections_list, list) and reflections_list else (reflections_list if not isinstance(reflections_list, list) else None)
+        row["reflection"] = (
+            reflections_list[0]
+            if isinstance(reflections_list, list) and reflections_list
+            else (reflections_list if not isinstance(reflections_list, list) else None)
+        )
         return row
 
     def get_multi_with_relations(
-        self, db: Client, *, skip: int = 0, limit: int = 100
+        self, db: Client, *, user_id: str, skip: int = 0, limit: int = 100
     ) -> List[Dict[str, Any]]:
         resp = (
             db.table(self.table_name)
             .select("*, application_stages(*), outcomes(*), reflections(*)")
+            .eq("user_id", user_id)
             .range(skip, skip + limit - 1)
             .order("created_at", desc=True)
             .execute()

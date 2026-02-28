@@ -1,9 +1,14 @@
+import copy
+import re as regex_module
+import uuid
+from datetime import date, datetime, timezone
+
 import pytest
 import pytest_asyncio
-from unittest.mock import MagicMock, patch
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from app.core.database import get_supabase
+from app.core.dependencies import get_current_user
 from app.main import app
 
 
@@ -12,60 +17,75 @@ from app.main import app
 # ---------------------------------------------------------------------------
 _tables: dict[str, list[dict]] = {}
 
+TEST_USER = {
+    "id": "test-user-id",
+    "email": "test@example.com",
+    "username": "testuser",
+    "display_name": "Test User",
+    "password_hash": "$2b$12$placeholder",
+    "bio": None,
+    "avatar_url": None,
+    "is_profile_public": True,
+    "streak_days": 0,
+    "last_active_date": None,
+    "created_at": "2026-01-01T00:00:00+00:00",
+    "updated_at": "2026-01-01T00:00:00+00:00",
+}
+
 
 def _reset_tables():
-    """Clear all in-memory tables."""
+    """Clear all in-memory tables and seed defaults."""
     _tables.clear()
     for name in (
+        "users",
         "resume_versions",
         "applications",
         "application_stages",
         "outcomes",
         "reflections",
+        "follows",
+        "groups",
+        "group_members",
+        "milestones",
+        "user_milestones",
+        "shared_posts",
+        "post_reactions",
     ):
         _tables[name] = []
+
+    # Seed the test user
+    _tables["users"].append(dict(TEST_USER))
+
+    # Seed milestones
+    _tables["milestones"].extend(
+        [
+            {
+                "id": "ms-getting-started",
+                "name": "Getting Started",
+                "description": "You created your account and took the first step.",
+                "criteria": {"action": "register"},
+                "created_at": "2026-01-01T00:00:00+00:00",
+            },
+            {
+                "id": "ms-first-app",
+                "name": "First Application",
+                "description": "You applied to your first role. The journey begins.",
+                "criteria": {"action": "create_application", "count": 1},
+                "created_at": "2026-01-01T00:00:00+00:00",
+            },
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
 # Tiny helpers that mimic supabase-py chained query builder
 # ---------------------------------------------------------------------------
-import uuid
-from datetime import datetime, date
 
 
 class _FakeResponse:
-    def __init__(self, data):
+    def __init__(self, data, count=None):
         self.data = data
-
-
-class _FakeFilterBuilder:
-    """Simulates .eq() / .maybe_single() / .execute() chains."""
-
-    def __init__(self, rows: list[dict]):
-        self._rows = rows
-
-    def eq(self, col, val):
-        self._rows = [r for r in self._rows if r.get(col) == val]
-        return self
-
-    def maybe_single(self):
-        return self  # execute will handle it
-
-    def range(self, start, end):
-        self._rows = self._rows[start : end + 1]
-        return self
-
-    def order(self, col, *, desc=False):
-        self._rows = sorted(
-            self._rows, key=lambda r: r.get(col, ""), reverse=desc
-        )
-        return self
-
-    def execute(self):
-        # If maybe_single was called we want to return single or None
-        if len(self._rows) <= 1:
-            return _FakeResponse(self._rows[0] if self._rows else None)
-        return _FakeResponse(self._rows)
+        self.count = count
 
 
 class _FakeInsertBuilder:
@@ -78,19 +98,21 @@ class _FakeInsertBuilder:
         return self
 
     def execute(self):
-        import copy
-
         row = copy.deepcopy(self._payload)
         row.setdefault("id", str(uuid.uuid4()))
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         row.setdefault("created_at", now)
         row.setdefault("updated_at", now)
-        # date defaults
+        # Table-specific defaults
         if self._table == "applications":
             row.setdefault("applied_date", str(date.today()))
             row.setdefault("status", "Applied")
         if self._table == "application_stages":
             row.setdefault("stage_date", str(date.today()))
+        if self._table == "group_members":
+            row.setdefault("joined_at", now)
+        if self._table == "user_milestones":
+            row.setdefault("reached_at", now)
         self._store.append(row)
         return _FakeResponse([row])
 
@@ -113,7 +135,7 @@ class _FakeUpdateBuilder:
         for row in self._store:
             if all(row.get(c) == v for c, v in self._filters):
                 row.update({k: v for k, v in self._payload.items() if v is not None})
-                row["updated_at"] = datetime.utcnow().isoformat()
+                row["updated_at"] = datetime.now(timezone.utc).isoformat()
                 return _FakeResponse([row])
         return _FakeResponse([])
 
@@ -128,23 +150,28 @@ class _FakeDeleteBuilder:
         return self
 
     def execute(self):
-        to_delete = []
-        for row in self._store:
-            if all(row.get(c) == v for c, v in self._filters):
-                to_delete.append(row)
+        to_delete = [
+            row
+            for row in self._store
+            if all(row.get(c) == v for c, v in self._filters)
+        ]
         for row in to_delete:
             self._store.remove(row)
         return _FakeResponse(to_delete)
 
 
 class _FakeSelectBuilder:
-    """Handles .select('*') and .select('*, child_table(*)') patterns."""
+    """Handles .select('*'), .select('*, child_table(*)') and count modes."""
 
-    def __init__(self, table_name: str, select_expr: str):
+    def __init__(
+        self, table_name: str, select_expr: str, count_mode: str | None = None
+    ):
         self._table = table_name
         self._select = select_expr
-        self._rows: list[dict] = []
+        self._count_mode = count_mode
         self._filters: list[tuple] = []
+        self._or_filter: str | None = None
+        self._in_filters: list[tuple] = []
         self._range_start: int | None = None
         self._range_end: int | None = None
         self._order_col: str | None = None
@@ -153,6 +180,14 @@ class _FakeSelectBuilder:
 
     def eq(self, col, val):
         self._filters.append((col, val))
+        return self
+
+    def or_(self, expr):
+        self._or_filter = expr
+        return self
+
+    def in_(self, col, values):
+        self._in_filters.append((col, values))
         return self
 
     def maybe_single(self):
@@ -170,46 +205,87 @@ class _FakeSelectBuilder:
         return self
 
     def execute(self):
-        import copy
-
         rows = copy.deepcopy(_tables.get(self._table, []))
 
-        # Apply filters
+        # Apply eq filters
         for col, val in self._filters:
             rows = [r for r in rows if r.get(col) == val]
 
-        # Embed related tables if requested (e.g. "*, application_stages(*)")
-        import re
+        # Apply in_ filters
+        for col, values in self._in_filters:
+            rows = [r for r in rows if r.get(col) in values]
 
-        related = re.findall(r"(\w+)\(\*\)", self._select)
+        # Apply or_ filter (simplified ilike support)
+        if self._or_filter:
+            parts = self._or_filter.split(",")
+            matched = []
+            for row in rows:
+                for part in parts:
+                    m = regex_module.match(r"(\w+)\.ilike\.%(.+)%", part.strip())
+                    if m:
+                        field, val = m.groups()
+                        if val.lower() in str(row.get(field, "")).lower():
+                            matched.append(row)
+                            break
+            rows = matched
+
+        # Embed related tables if requested
+        related = regex_module.findall(r"(\w+)\(\*\)", self._select)
         for rel in related:
             rel_rows = _tables.get(rel, [])
-            # determine FK column (convention: singular of parent + _id)
-            fk_col = self._table.rstrip("s") + "_id"  # e.g. application_id
-            if fk_col == "application_id" or True:
-                fk_col = self._table.rstrip("s") + "_id"
             for row in rows:
-                row[rel] = [
-                    copy.deepcopy(r)
-                    for r in rel_rows
-                    if r.get(fk_col) == row.get("id")
-                    or r.get("application_id") == row.get("id")
-                ]
+                matches = []
+                parent_id = row.get("id")
+                for r in rel_rows:
+                    # Related row has FK pointing to parent
+                    if any(
+                        r.get(k) == parent_id
+                        for k in r
+                        if k.endswith("_id") and k != "id"
+                    ):
+                        matches.append(copy.deepcopy(r))
+                        continue
+                    # Parent has FK pointing to related row
+                    rel_id = r.get("id")
+                    if rel_id and any(
+                        row.get(k) == rel_id
+                        for k in row
+                        if k.endswith("_id") and k != "id"
+                    ):
+                        matches.append(copy.deepcopy(r))
+                row[rel] = matches
 
         # Ordering
         if self._order_col:
             rows = sorted(
-                rows, key=lambda r: r.get(self._order_col, ""), reverse=self._order_desc
+                rows,
+                key=lambda r: r.get(self._order_col, ""),
+                reverse=self._order_desc,
             )
 
         # Range
         if self._range_start is not None and self._range_end is not None:
             rows = rows[self._range_start : self._range_end + 1]
 
-        if self._single:
-            return _FakeResponse(rows[0] if rows else None)
+        count = len(rows) if self._count_mode else None
 
-        return _FakeResponse(rows)
+        if self._single:
+            return _FakeResponse(rows[0] if rows else None, count=count)
+
+        return _FakeResponse(rows, count=count)
+
+
+class _FakeStorageBucket:
+    def upload(self, path, content, options=None):
+        return {"Key": path}
+
+    def get_public_url(self, path):
+        return f"https://fake-storage.supabase.co/resumes/{path}"
+
+
+class _FakeStorage:
+    def from_(self, bucket):
+        return _FakeStorageBucket()
 
 
 class _FakeTableBuilder:
@@ -218,8 +294,8 @@ class _FakeTableBuilder:
         if table_name not in _tables:
             _tables[table_name] = []
 
-    def select(self, expr="*"):
-        return _FakeSelectBuilder(self._table, expr)
+    def select(self, expr="*", count=None):
+        return _FakeSelectBuilder(self._table, expr, count_mode=count)
 
     def insert(self, payload):
         builder = _FakeInsertBuilder(self._table, _tables[self._table])
@@ -236,6 +312,9 @@ class _FakeTableBuilder:
 class FakeSupabaseClient:
     """Mimics the subset of supabase.Client used by our CRUD layer."""
 
+    def __init__(self):
+        self.storage = _FakeStorage()
+
     def table(self, name: str):
         return _FakeTableBuilder(name)
 
@@ -243,11 +322,18 @@ class FakeSupabaseClient:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
 def _override_get_supabase():
     return FakeSupabaseClient()
 
 
+def _override_get_current_user():
+    return dict(TEST_USER)
+
+
 app.dependency_overrides[get_supabase] = _override_get_supabase
+app.dependency_overrides[get_current_user] = _override_get_current_user
 
 
 @pytest.fixture(autouse=True)

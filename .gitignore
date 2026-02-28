@@ -5,3 +5,4 @@ __pycache__/
 api_schema_for_frontend.md
 *.db
 .env
+.vscode/
