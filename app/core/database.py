@@ -1,17 +1,9 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from supabase import create_client, Client
 from app.core.config import settings
 
-engine = create_async_engine(
-    settings.async_database_uri,
-    echo=True,
-    future=True,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.async_database_uri else {}
-)
+supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
-async_session_maker = async_sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
-)
 
-async def get_db() -> AsyncSession:
-    async with async_session_maker() as session:
-        yield session
+def get_supabase() -> Client:
+    """Return the Supabase client instance (used as a FastAPI dependency)."""
+    return supabase

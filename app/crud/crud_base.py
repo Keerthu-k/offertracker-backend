@@ -1,58 +1,49 @@
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
-from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.base import Base
+"""
+Generic CRUD helpers that talk to Supabase via the Python client.
+Each method receives a `supabase.Client` and operates on a table name.
+"""
 
-ModelType = TypeVar("ModelType", bound=Base)
-CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
-UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 
-class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    def __init__(self, model: Type[ModelType]):
-        """
-        CRUD object with default methods to Create, Read, Update, Delete (CRUD).
-        """
-        self.model = model
+from supabase import Client
 
-    async def get(self, db: AsyncSession, id: Any) -> Optional[ModelType]:
-        result = await db.execute(select(self.model).filter(self.model.id == id))
-        return result.scalars().first()
+T = TypeVar("T")
 
-    async def get_multi(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> List[ModelType]:
-        result = await db.execute(select(self.model).offset(skip).limit(limit))
-        return result.scalars().all()
 
-    async def create(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
-        obj_in_data = obj_in.model_dump()
-        db_obj = self.model(**obj_in_data)  # type: ignore
-        db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
+class CRUDBase:
+    def __init__(self, table_name: str):
+        self.table_name = table_name
 
-    async def update(
-        self, db: AsyncSession, *, db_obj: ModelType, obj_in: Union[UpdateSchemaType, Dict[str, Any]]
-    ) -> ModelType:
-        obj_data = db_obj.__dict__
-        if isinstance(obj_in, dict):
-            update_data = obj_in
-        else:
-            update_data = obj_in.model_dump(exclude_unset=True)
-            
-        for field in obj_data:
-            if field in update_data:
-                setattr(db_obj, field, update_data[field])
-                
-        db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
+    # ---------- READ ----------
+    def get(self, db: Client, id: str) -> Optional[Dict[str, Any]]:
+        resp = db.table(self.table_name).select("*").eq("id", id).maybe_single().execute()
+        return resp.data
 
-    async def remove(self, db: AsyncSession, *, id: Any) -> ModelType:
-        result = await db.execute(select(self.model).filter(self.model.id == id))
-        obj = result.scalars().first()
-        if obj:
-            await db.delete(obj)
-            await db.commit()
-        return obj  # type: ignore
+    def get_multi(
+        self, db: Client, *, skip: int = 0, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        resp = (
+            db.table(self.table_name)
+            .select("*")
+            .range(skip, skip + limit - 1)
+            .execute()
+        )
+        return resp.data or []
+
+    # ---------- CREATE ----------
+    def create(self, db: Client, *, data: Dict[str, Any]) -> Dict[str, Any]:
+        # Filter out None values so DB defaults kick in
+        payload = {k: v for k, v in data.items() if v is not None}
+        resp = db.table(self.table_name).insert(payload).execute()
+        return resp.data[0]
+
+    # ---------- UPDATE ----------
+    def update(self, db: Client, *, id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        payload = {k: v for k, v in data.items() if v is not None}
+        resp = db.table(self.table_name).update(payload).eq("id", id).execute()
+        return resp.data[0]
+
+    # ---------- DELETE ----------
+    def remove(self, db: Client, *, id: str) -> Optional[Dict[str, Any]]:
+        resp = db.table(self.table_name).delete().eq("id", id).execute()
+        return resp.data[0] if resp.data else None
