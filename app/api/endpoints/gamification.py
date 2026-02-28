@@ -120,6 +120,22 @@ def my_stats(
         .execute()
     )
 
+    # New feature counts
+    contacts_resp = (
+        db.table("contacts")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+    reminders_resp = (
+        db.table("reminders")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .eq("is_completed", False)
+        .execute()
+    )
+
     return {
         "total_applications": total_applications,
         "total_offers": total_offers,
@@ -128,4 +144,6 @@ def my_stats(
         "total_stages": total_stages,
         "streak_days": current_user.get("streak_days", 0),
         "milestones_reached": ms_resp.count or 0,
+        "total_contacts": contacts_resp.count or 0,
+        "total_reminders_pending": reminders_resp.count or 0,
     }

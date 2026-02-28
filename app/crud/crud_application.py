@@ -35,12 +35,26 @@ class CRUDApplication(CRUDBase):
         return row
 
     def get_multi_with_relations(
-        self, db: Client, *, user_id: str, skip: int = 0, limit: int = 100
+        self,
+        db: Client,
+        *,
+        user_id: str,
+        skip: int = 0,
+        limit: int = 100,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        resp = (
+        query = (
             db.table(self.table_name)
             .select("*, application_stages(*), outcomes(*), reflections(*)")
             .eq("user_id", user_id)
+        )
+        if status:
+            query = query.eq("status", status)
+        if priority:
+            query = query.eq("priority", priority)
+        resp = (
+            query
             .range(skip, skip + limit - 1)
             .order("created_at", desc=True)
             .execute()

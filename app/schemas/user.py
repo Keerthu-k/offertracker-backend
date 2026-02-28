@@ -18,8 +18,11 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     display_name: Optional[str] = Field(None, max_length=100)
     bio: Optional[str] = None
-    avatar_url: Optional[str] = Field(None, max_length=500)
     is_profile_public: Optional[bool] = None
+    profile_visibility: Optional[str] = Field(
+        None,
+        pattern="^(private|followers|groups|public)$",
+    )
 
 
 class UserResponse(BaseModel):
@@ -28,14 +31,14 @@ class UserResponse(BaseModel):
     username: str
     display_name: Optional[str] = None
     bio: Optional[str] = None
-    avatar_url: Optional[str] = None
     is_profile_public: bool = False
+    profile_visibility: str = "private"
     streak_days: int = 0
     last_active_date: Optional[date] = None
     created_at: datetime
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
 class UserPublicProfile(BaseModel):
@@ -43,7 +46,7 @@ class UserPublicProfile(BaseModel):
     username: str
     display_name: Optional[str] = None
     bio: Optional[str] = None
-    avatar_url: Optional[str] = None
+    profile_visibility: str = "private"
     streak_days: int = 0
     created_at: datetime
 

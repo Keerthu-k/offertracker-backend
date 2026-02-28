@@ -2,6 +2,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 from datetime import datetime
 
+from app.schemas.enums import PostType, ReactionType, GroupRole
+
 
 # ---------- Follows ----------
 
@@ -60,7 +62,7 @@ class GroupMemberResponse(BaseModel):
 
 class PostCreate(BaseModel):
     group_id: Optional[str] = None
-    post_type: str = Field(default="update", max_length=30)
+    post_type: PostType = Field(default=PostType.UPDATE)
     title: Optional[str] = Field(None, max_length=255)
     content: str
     is_public: bool = True
@@ -88,7 +90,7 @@ class PostResponse(BaseModel):
 
 
 class ReactionCreate(BaseModel):
-    reaction: str = Field(default="like", max_length=20)
+    reaction: ReactionType = Field(default=ReactionType.LIKE)
 
 
 class ReactionResponse(BaseModel):

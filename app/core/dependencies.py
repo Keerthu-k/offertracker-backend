@@ -1,36 +1,37 @@
-"""Shared FastAPI dependencies – authentication helpers."""
+"""Shared FastAPI dependencies – authentication helpers using Supabase."""
 
 from typing import Any, Dict
 
-import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client
 
 from app.core.database import get_supabase
-from app.core.security import decode_access_token
+from app.core.security import verify_supabase_token
+from app.crud.crud_user import user as crud_user
 
 bearer_scheme = HTTPBearer()
-
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Client = Depends(get_supabase),
 ) -> Dict[str, Any]:
-    """Decode the JWT, fetch the user row from Supabase, raise 401 on failure."""
+    """Decode the Supabase JWT, fetch the user row from our public schema, mapping auth.users.id -> users.id."""
     token = credentials.credentials
     try:
-        payload = decode_access_token(token)
-        user_id: str = payload.get("sub", "")
+        # 1. Verify Supabase JWT using project secret
+        payload = verify_supabase_token(token)
+        user_id = payload.get("sub")
         if not user_id:
             raise ValueError("Missing subject")
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, ValueError):
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail=f"Invalid or expired token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # 2. Get the user from our custom defined `users` table
     resp = (
         db.table("users")
         .select("*")
@@ -39,9 +40,22 @@ def get_current_user(
         .execute()
     )
     user = resp.data
+
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+        email = payload.get("email")
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User profile not found and token has no email claim",
+            )
+
+        metadata = payload.get("user_metadata") or {}
+        user = crud_user.ensure_profile(
+            db,
+            user_id=user_id,
+            email=email,
+            username=metadata.get("username"),
+            display_name=metadata.get("display_name"),
         )
+
     return user

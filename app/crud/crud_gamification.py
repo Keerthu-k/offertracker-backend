@@ -63,7 +63,7 @@ def get_active_community(db: Client, limit: int = 20) -> List[Dict[str, Any]]:
     resp = (
         db.table("users")
         .select(
-            "id, username, display_name, avatar_url, streak_days"
+            "id, username, display_name, streak_days"
         )
         .eq("is_profile_public", True)
         .order("last_active_date", desc=True)

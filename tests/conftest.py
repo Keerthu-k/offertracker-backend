@@ -24,7 +24,6 @@ TEST_USER = {
     "display_name": "Test User",
     "password_hash": "$2b$12$placeholder",
     "bio": None,
-    "avatar_url": None,
     "is_profile_public": True,
     "streak_days": 0,
     "last_active_date": None,
