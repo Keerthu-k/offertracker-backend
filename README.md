@@ -1,134 +1,136 @@
-# OfferTracker Backend
+# OfferTracker
 
-A thoughtful career tracking platform for professionals. Keep a personal database of your job applications, share your journey with friends and circles, and let natural milestones quietly mark your progress.
+A career intelligence API for professionals who want genuine clarity in their job search — not another chore.
 
 ---
 
 ## 1. What is OfferTracker?
 
-OfferTracker is a **FastAPI-powered career intelligence API** built for professionals who want clarity in their job search — not another chore. 
+OfferTracker is a **FastAPI-powered backend** built around one core idea: the job search deserves more than a Kanban board.
 
-Our core philosophy is simple: **Milestones, not medals. Progress, not points.** Most job trackers treat applying for jobs as an automated Kanban board, built for transaction volume. The job search is historically lonely and demoralizing. OfferTracker elevates this by focusing entirely on *reflection* (what worked, what failed, identifying skill gaps) and genuine progress mapping.
+Most trackers record what happened. OfferTracker is built to help you understand *why* — why certain interview rounds go well, why certain resume versions perform better, what skill gaps keep surfacing, and how consistent your effort actually is.
 
-It's a **personal database** that keeps your entire search history organised: which companies you applied to, what happened at each interview stage, whether you got an offer or a rejection, and most importantly — what you learned from the experience.
+At its core it is a **personal job search database**: every application, every interview stage, every offer and rejection, every reflection written after the fact. The entry form is intentionally flat — just `company_name` and `role_title` are required. Everything else is optional. Adding an application should take five seconds, not five minutes.
 
-It's also a place to **share your journey** with friends and trusted circles. Not a social media platform. Not a competition. Just a lightweight space where people going through the same thing can see how each other is doing, exchange tips, and stay motivated by showing up together.
+Beyond the personal tracker, OfferTracker has a lightweight **social layer** — follow friends, join circles, share updates and tips. Not a social media platform, not a competition. Just a small space where people navigating the same experience can see how each other is doing.
 
-The application form is **flat and simple** — just the company name, role, and you're done. Everything else is optional. It should take seconds, not minutes. The goal is to make tracking feel effortless so you actually do it.
+Progress is surfaced through **milestones**: quiet, automatic markers reached by actually using the product. No points, no leaderboard.
 
 ---
 
-## 2. Why We Built This
+## 2. Why This Exists
 
-Most job seekers:
-
-- Apply blindly and forget what happened in each interview.
-- Don't track which resume version performs best.
-- Have no structured way to figure out *why* they keep getting rejected.
-- Can't identify and close skill gaps systematically.
-- Search alone, with no one to share the ups and downs with.
-
-OfferTracker treats the job search as a **shared, reflective process** — not a grind:
-
-| Pain Point | What OfferTracker Does |
+| Problem | What OfferTracker does about it |
 |---|---|
-| Forgetting interview feedback | Structured **Stages** with per-round notes |
-| No resume tracking | **Resume Versions** linked to each application |
-| Unknown rejection patterns | **Outcomes** with categorised rejection reasons + personal analytics |
-| No systematic skill-gap analysis | **Reflections** — what worked, what didn't, skill gaps, improvement plan |
-| Searching alone | **Follow friends**, join **groups**, share **updates and tips** |
-| No sense of progress | Quiet **milestones** that acknowledge your effort naturally |
+| Forgetting what happened in each interview round | Structured **Stages** with per-round notes, prep notes, and questions asked |
+| Not knowing which resume version performs best | **Resume Versions** — label, store, and link each version to every application |
+| No idea why rejections keep happening | **Outcomes** with compensation details, **Reflections** with structured post-mortems |
+| Skill gaps identified in interviews slip through the cracks | `skill_gaps` JSON field in Reflections + a dedicated improvement plan |
+| Job search feels like searching alone | **Follows**, **Groups**, and a shared **Post** feed |
+| No sense of consistent effort | **Streak tracking** and natural **Milestones** reached through real activity |
+| Interesting jobs forgotten before applying | **Saved Jobs** — bookmark postings and convert them to applications when ready |
+| No visibility into search performance | **Analytics dashboard** — pipeline funnel, response rates, source effectiveness, salary insights |
 
 ---
 
-## 3. Conceptual Model & Database Design
+## 3. Data Model
 
-### Core Lifecycle
+### Application Lifecycle
 
 ```
-User ──► Application (Company + Role + Location)
-            │
-            ├──► Stages (Recruiter Call → Technical Screen → Final → ...)
-            ├──► Outcome (Offer / Rejected / Withdrawn)
-            └──► Reflection (what_worked, what_failed, skill_gaps, improvement_plan)
+Saved → Applied → Interviewing → Offer → Accepted
+                              ↘ Rejected  (at any point)
+                              ↘ Withdrawn (at any point)
+```
+
+Auto-transitions happen silently:
+- Creating an application with `status: Applied` auto-sets `applied_date` to today.
+- Adding a Stage to an `Applied` application auto-moves it to `Interviewing`.
+- Posting an Outcome auto-moves the application to `Offer`.
+
+### Core Application Structure
+
+```
+Application (company, role, status, salary range, source, priority, ...)
+    │
+    ├── Stages[]        (Recruiter Call, Technical, Onsite, ...)
+    ├── Outcome         (offer details, compensation, deadline)
+    ├── Reflection      (what_worked, what_failed, skill_gaps, improvement_plan)
+    ├── Contacts[]      (recruiters, hiring managers, referrals)
+    ├── Documents[]     (cover letters, portfolios, references)
+    └── Reminders[]     (follow-up dates, deadlines, interview prep)
 ```
 
 ### Social & Progress Layer
 
 ```
-User ──► Follows (stay connected with friends)
-     ──► Groups (circles of people in similar situations)
-     ──► Posts (share updates, tips, milestones, questions)
-     ──► Milestones (quiet progress markers, reached naturally)
+User ──► Follows        (stay connected with people on the same journey)
+     ──► Groups         (circles — public or private)
+     ──► Posts          (updates, tips, milestones, questions, resources, celebrations)
+     ──► Milestones     (12 progress markers, reached automatically)
+     ──► Saved Jobs     (bookmarked postings, convertible to full applications)
+     ──► Activity Log   (automatic timeline of every action taken)
 ```
 
-### All 13 Database Tables
+### Database Tables
 
 | Table | Description |
 |---|---|
-| `users` | Accounts — email, username, password hash, activity streak |
-| `resume_versions` | Per-user snapshots of resumes with optional file uploads |
-| `applications` | Job applications — company, role, location, source, status, date |
-| `application_stages` | Interview rounds per application — stage name, date, notes |
-| `outcomes` | Final result per application — Offer / Rejected / Withdrawn |
-| `reflections` | Post-mortem per application — skill gaps (JSON), improvement plan |
+| `users` | Accounts — email, username, streak, profile visibility |
+| `resume_versions` | Resume snapshots with optional file upload |
+| `applications` | Core job applications — full metadata, status, salary range |
+| `application_stages` | Interview rounds — type, result, questions asked, prep notes |
+| `outcomes` | Offer details — compensation, equity, start date, deadline |
+| `reflections` | Post-mortem — what worked, what failed, skill gaps (JSON), improvement plan |
+| `contacts` | Networking contacts linked to applications or standalone |
+| `documents` | Cover letters, portfolios, references per application |
+| `reminders` | Scheduled reminders — follow-ups, deadlines, interview prep |
+| `saved_jobs` | Bookmarked job postings, promotable to full applications |
 | `follows` | User → User connection graph |
 | `groups` | Circles — public or private |
-| `group_members` | Membership records with role (admin / member) |
-| `milestones` | 12 progress markers — reached naturally through real activity |
+| `group_members` | Membership with role (admin / member) |
+| `milestones` | 12 progress markers |
 | `user_milestones` | Milestones reached by each user |
-| `shared_posts` | Journey sharing — updates, tips, milestones, questions |
-| `post_reactions` | Simple reactions on posts |
+| `shared_posts` | Community posts — updates, tips, milestones, questions |
+| `post_reactions` | Reactions on posts |
+| `activity_log` | Full chronological event history per user |
 
-The full schema with indexes, triggers, RLS policies, and seed data lives in [supabase_schema.sql](supabase_schema.sql).
+The full schema with indexes, triggers, and RLS policies lives in [supabase_schema_final.sql](supabase_schema_final.sql).
 
 ---
 
 ## 4. Authentication
 
-OfferTracker uses a simple **JWT-based auth** system:
+Authentication is handled entirely by **Supabase Auth**:
 
-1. **Register** (`POST /api/v1/auth/register`) — creates a user, hashes password with bcrypt, returns a JWT.
-2. **Login** (`POST /api/v1/auth/login`) — verifies credentials, returns a JWT.
-3. **All other endpoints** require a `Bearer <token>` header — enforced via a FastAPI dependency (`get_current_user`).
+1. **Register** (`POST /api/v1/auth/register`) — signs up via Supabase Auth, creates a profile row in `public.users`, and awards the *Getting Started* milestone. Returns a session JWT.
+2. **Login** (`POST /api/v1/auth/login`) — authenticates via Supabase Auth, returns the session JWT.
+3. **All other endpoints** require an `Authorization: Bearer <token>` header, verified by the `get_current_user` FastAPI dependency against the `SUPABASE_JWT_SECRET`.
 
-Every resource (applications, resumes, etc.) is **scoped to the authenticated user**. Users can only see/edit their own data. Public profiles are opt-in.
-
----Roadmap & Architectural Findings
-
-Based on architectural reviews and product insights, we are tracking the following technical debt and future enhancements:
-
-### Product & Usability Scope
-- **Granular Privacy Controls**: The current `is_profile_public` boolean is too binary for the secretive nature of job hunting. We will implement granular visibility (e.g., Private, Friends Only, Group Only).
-- **Pro-Level Compensation Tracking**: Upgrading the `outcomes` table to structure compensation data (base salary, bonus, equity, currency) and enforce `deadline_date` for expiring offers, aiding professionals juggling actual numbers.
-- **Analytics & Networking**: Converting the `applied_source` to a strict Enum (no more fragmented free-text) and properly deploying the `contacts` table to track recruiter and referral relationships (bridging the gap between our CRUD files and the database).
-
-### Security & Architecture Scope
-- **Fix "Split-Brain" Auth**: We are removing the manual Supabase-to-FastAPI `public.users` sync in our login endpoints. Instead, we'll use a **PostgreSQL Trigger** directly in Supabase to guarantee profile creation and eliminate the risk of zombie accounts.
-- **Enforce Row Level Security (RLS)**: Adding strict `ENABLE ROW LEVEL SECURITY` policies to all tables in `supabase_schema.sql` to protect data at the database layer (scoping strictly to `auth.uid() = user_id`).
-- **Standardize Schema**: Dropping the legacy `password_hash` column from `public.users` (delegated completely to Supabase Auth) and properly creating the missing tables for contacts, tags, and reminders to match existing CRUD logic.
+Every resource is scoped strictly to the authenticated user. Users can only read or modify their own data. Public profiles are opt-in via `profile_visibility`.
 
 ---
-
-## 6. 
 
 ## 5. API Reference
 
 **Base URL**: `http://127.0.0.1:8000` &nbsp;|&nbsp; **Prefix**: `/api/v1`
 
+> Full request / response schemas — including all fields, types, enums, and examples — are in [api_schema_for_frontend.md](api_schema_for_frontend.md).  
+> Interactive docs are at `http://127.0.0.1:8000/docs`.
+
 ### Auth
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/auth/register` | Register a new user |
-| `POST` | `/auth/login` | Login and receive JWT |
+| `POST` | `/auth/register` | Register a new account |
+| `POST` | `/auth/login` | Log in and receive a JWT |
 
 ### Users
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/users/me` | Get current user profile |
-| `PUT` | `/users/me` | Update current user profile |
+| `GET` | `/users/me` | Get the authenticated user's profile |
+| `PUT` | `/users/me` | Update profile (display name, bio, visibility) |
 | `GET` | `/users/search?q=` | Search public user profiles |
 | `GET` | `/users/{user_id}` | View a public user profile |
 
@@ -136,23 +138,23 @@ Based on architectural reviews and product insights, we are tracking the followi
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/resumes/` | List my resume versions |
+| `GET` | `/resumes/` | List resume versions |
 | `POST` | `/resumes/` | Create a resume version |
-| `GET` | `/resumes/{id}` | Get a resume version |
+| `GET` | `/resumes/{id}` | Get a resume version by ID |
 | `PUT` | `/resumes/{id}` | Update a resume version |
 | `DELETE` | `/resumes/{id}` | Delete a resume version |
 
 ### Applications
 
-The form is intentionally flat. Only `company_name` and `role_title` are required — everything else is optional and fills itself with sensible defaults.
+Only `company_name` and `role_title` are required. Everything else defaults gracefully.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/applications/` | List my applications (with stages, outcome, reflection) |
-| `POST` | `/applications/` | Create a new application |
-| `GET` | `/applications/{id}` | Get application with nested relations |
+| `GET` | `/applications/` | List applications — filter by `status`, `priority` |
+| `POST` | `/applications/` | Create an application |
+| `GET` | `/applications/{id}` | Get application with stages, outcome, and reflection |
 | `PUT` | `/applications/{id}` | Update an application |
-| `DELETE` | `/applications/{id}` | Delete an application (cascades) |
+| `DELETE` | `/applications/{id}` | Delete an application (cascades all relations) |
 
 ### Application — Stages
 
@@ -162,21 +164,73 @@ The form is intentionally flat. Only `company_name` and `role_title` are require
 | `PUT` | `/applications/{id}/stages/{stage_id}` | Update a stage |
 | `DELETE` | `/applications/{id}/stages/{stage_id}` | Delete a stage |
 
-### Application — Outcome
+### Application — Outcome (Offer Details)
+
+One outcome per application. Creating one auto-transitions the application to `Offer`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/applications/{id}/outcome` | Set the outcome |
-| `PUT` | `/applications/{id}/outcome/{outcome_id}` | Update the outcome |
-| `DELETE` | `/applications/{id}/outcome/{outcome_id}` | Delete the outcome |
+| `POST` | `/applications/{id}/outcome` | Record offer details |
+| `PUT` | `/applications/{id}/outcome/{outcome_id}` | Update offer details |
+| `DELETE` | `/applications/{id}/outcome/{outcome_id}` | Remove offer details |
 
 ### Application — Reflection
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/applications/{id}/reflection` | Add a reflection |
+| `POST` | `/applications/{id}/reflection` | Add a post-interview reflection |
 | `PUT` | `/applications/{id}/reflection/{reflection_id}` | Update a reflection |
 | `DELETE` | `/applications/{id}/reflection/{reflection_id}` | Delete a reflection |
+
+### Contacts
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/contacts/` | List contacts — filter by `application_id`, `contact_type` |
+| `POST` | `/contacts/` | Add a contact |
+| `GET` | `/contacts/{contact_id}` | Get a contact by ID |
+| `PUT` | `/contacts/{contact_id}` | Update a contact |
+| `DELETE` | `/contacts/{contact_id}` | Delete a contact |
+
+### Documents
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/documents/` | List documents — filter by `application_id` |
+| `POST` | `/documents/` | Attach a document to an application |
+| `GET` | `/documents/{document_id}` | Get a document by ID |
+| `PUT` | `/documents/{document_id}` | Update a document |
+| `DELETE` | `/documents/{document_id}` | Delete a document |
+
+### Reminders
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/reminders/` | List reminders — filter by `is_completed`, `application_id` |
+| `POST` | `/reminders/` | Create a reminder |
+| `GET` | `/reminders/{reminder_id}` | Get a reminder by ID |
+| `PUT` | `/reminders/{reminder_id}` | Update a reminder |
+| `DELETE` | `/reminders/{reminder_id}` | Delete a reminder |
+| `POST` | `/reminders/{reminder_id}/complete` | Mark a reminder as completed |
+
+### Saved Jobs
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/saved-jobs/` | List saved jobs — filter by `status`, `priority` |
+| `POST` | `/saved-jobs/` | Bookmark a new job posting |
+| `GET` | `/saved-jobs/{id}` | Get a saved job by ID |
+| `PUT` | `/saved-jobs/{id}` | Update a saved job (archive via `status: Archived`) |
+| `DELETE` | `/saved-jobs/{id}` | Delete a saved job |
+| `POST` | `/saved-jobs/{id}/convert` | Promote to a full application |
+
+### Analytics
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/analytics/dashboard` | Full dashboard — pipeline funnel, rates, source breakdown, weekly trend, salary insights |
+| `GET` | `/analytics/activity` | Activity timeline — filter by `application_id` |
+| `GET` | `/analytics/questions` | Personal interview question bank, aggregated from all stages |
 
 ### Social — Follows
 
@@ -185,16 +239,16 @@ The form is intentionally flat. Only `company_name` and `role_title` are require
 | `POST` | `/social/follow/{user_id}` | Follow a user |
 | `DELETE` | `/social/follow/{user_id}` | Unfollow a user |
 | `GET` | `/social/followers/{user_id}` | List followers |
-| `GET` | `/social/following/{user_id}` | List following |
+| `GET` | `/social/following/{user_id}` | List accounts this user follows |
 | `GET` | `/social/follow-stats/{user_id}` | Get follower / following counts |
 
-### Social — Groups (Circles)
+### Social — Groups
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/social/groups` | Create a group |
 | `GET` | `/social/groups` | List public groups |
-| `GET` | `/social/groups/mine` | List my groups |
+| `GET` | `/social/groups/mine` | List groups you belong to |
 | `GET` | `/social/groups/{group_id}` | Get group details |
 | `PUT` | `/social/groups/{group_id}` | Update group (creator only) |
 | `DELETE` | `/social/groups/{group_id}` | Delete group (creator only) |
@@ -206,94 +260,89 @@ The form is intentionally flat. Only `company_name` and `role_title` are require
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/social/posts` | Create a post (update / tip / milestone / question) |
-| `GET` | `/social/posts/feed` | Public feed (optional `group_id` filter) |
-| `GET` | `/social/posts/mine` | My posts |
+| `POST` | `/social/posts` | Create a post |
+| `GET` | `/social/posts/feed` | Public feed — filter by `group_id` |
+| `GET` | `/social/posts/mine` | Your posts |
 | `PUT` | `/social/posts/{post_id}` | Update a post (author only) |
 | `DELETE` | `/social/posts/{post_id}` | Delete a post (author only) |
-| `POST` | `/social/posts/{post_id}/react` | React to a post |
-| `DELETE` | `/social/posts/{post_id}/react` | Remove reaction |
+| `POST` | `/social/posts/{post_id}/react` | Add a reaction |
+| `DELETE` | `/social/posts/{post_id}/react` | Remove a reaction |
 
 ### Progress
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/progress/milestones` | List all milestones |
-| `GET` | `/progress/milestones/mine` | My reached milestones |
-| `GET` | `/progress/community` | Active community members (public profiles) |
-| `GET` | `/progress/stats` | My progress summary (applications, offers, rejections, streaks) |
+| `GET` | `/progress/milestones` | List all available milestones |
+| `GET` | `/progress/milestones/mine` | Milestones you have reached |
+| `GET` | `/progress/community` | Active members with public profiles |
+| `GET` | `/progress/stats` | Your summary — applications, offers, rejections, streak, milestones |
 
 ### File Upload
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/upload/resumes/{resume_id}` | Upload a resume file (PDF / Word, max 10 MB) |
-
-> Full request / response schemas are documented in [api_schema_for_frontend.md](api_schema_for_frontend.md) and in the interactive Swagger UI at `/docs`.
+| `POST` | `/upload/resumes/{resume_id}` | Upload a resume file (PDF or Word, max 10 MB) — updates `file_url` on the resume version |
 
 ---
 
-## 6. Milestones — Thoughtful Progress, Not Gamification
+## 6. Milestones
 
-We don't do points, levels, or leaderboards. Those work for games, not for professionals navigating a stressful career transition.
+No points, no leaderboard. Just 12 quiet markers that acknowledge real effort.
 
-Instead, OfferTracker tracks **milestones** — natural moments in your job search journey that deserve quiet acknowledgment. They're reached automatically as you use the app. No grinding, no competition.
-
-| Milestone | What It Means |
+| Milestone | Triggered by |
 |-----------|--------------|
-| Getting Started | You created your account and took the first step. |
-| First Application | You applied to your first role. The journey begins. |
-| Building Momentum | Ten applications in. You're putting yourself out there. |
-| In the Zone | Twenty-five applications. Consistent effort pays off. |
-| Self-Reflective | You wrote your first reflection. Growth starts with honesty. |
-| Growth Mindset | Ten reflections. You're learning from every experience. |
-| One Week Strong | Seven consecutive days of activity. Consistency is key. |
-| Thirty Day Streak | A full month of showing up. That takes real dedication. |
-| Connected | You're following five people. Job searching is better together. |
-| Part of a Circle | You joined your first group. Shared journeys go further. |
-| Sharing Insights | You shared your first post. Helping others helps you grow. |
-| Offer Received | You received a job offer. All the effort was worth it. |
+| Getting Started | Creating an account |
+| First Application | Creating the first application |
+| Building Momentum | 10 applications created |
+| In the Zone | 25 applications created |
+| Self-Reflective | Writing the first reflection |
+| Growth Mindset | Writing 10 reflections |
+| One Week Strong | 7 consecutive days of activity |
+| Thirty Day Streak | 30 consecutive days of activity |
+| Connected | Following 5 users |
+| Part of a Circle | Joining a group |
+| Sharing Insights | Creating a post |
+| Offer Received | Recording a job offer |
 
-**Consistency tracking** is the only metric we surface: how many consecutive days you've been active. It's a gentle reminder to keep showing up — not a score to inflate.
+The only metric surfaced on an ongoing basis is **streak days** — how many consecutive days you have been active. A gentle, honest signal.
 
 ---
 
-## 7. Architecture & Philosophy
-
-Built with **Domain-Driven Design (DDD)**, modularised into cleanly separated layers:
+## 7. Architecture
 
 ```
 app/
 ├── api/
-│   └── endpoints/         # HTTP route handlers (auth, users, applications, social, progress, upload)
+│   └── endpoints/
+│       ├── auth.py            # Register, login
+│       ├── users.py           # Profile management
+│       ├── resumes.py         # Resume versions
+│       ├── applications.py    # Applications, stages, outcomes, reflections
+│       ├── contacts.py        # Networking contacts
+│       ├── documents.py       # Application documents
+│       ├── reminders.py       # Scheduled reminders
+│       ├── saved_jobs.py      # Job bookmarks + convert-to-application
+│       ├── analytics.py       # Dashboard, activity log, question bank
+│       ├── social.py          # Follows, groups, posts, reactions
+│       ├── gamification.py    # Milestones, community, stats
+│       └── upload.py          # Supabase Storage file upload
 ├── core/
-│   ├── config.py          # Settings & environment variables
-│   ├── database.py        # Supabase client singleton
-│   ├── dependencies.py    # get_current_user JWT dependency
-│   ├── security.py        # JWT creation / verification, bcrypt hashing
-│   └── gamification.py    # Streak tracking & milestone checker
-├── crud/
-│   ├── crud_base.py       # Generic CRUD (get, get_multi, create, update, remove, get_by_field)
-│   ├── crud_application.py
-│   ├── crud_resume.py
-│   ├── crud_user.py       # Email/username lookup, streak, search
-│   ├── crud_social.py     # Follows, groups, posts, reactions
-│   └── crud_gamification.py # Milestones, community view
-└── schemas/
-    ├── application.py     # Application, Stage, Outcome, Reflection
-    ├── resume.py          # ResumeVersion
-    ├── user.py            # Register, Login, Token, Profile
-    ├── social.py          # Follow, Group, Post, Reaction
-    └── gamification.py    # Milestone, Community, UserStats
+│   ├── config.py              # Pydantic settings — env vars
+│   ├── database.py            # Supabase client singleton
+│   ├── dependencies.py        # get_current_user JWT dependency
+│   ├── security.py            # JWT verification
+│   └── gamification.py        # Streak tracking + milestone check
+├── crud/                      # Data access layer — one file per domain
+└── schemas/                   # Pydantic request/response models
 ```
 
 ### Design Principles
 
-- **Flat over nested.** The application form takes two fields. Everything else is optional.
-- **Your data, your control.** Every resource is user-scoped. Private by default, public by choice.
-- **Progress, not performance.** No points, no leaderboard. Just honest tracking.
-- **Social, not social media.** Share with friends and circles who understand what you're going through.
-- **Light, not heavy.** The system should make your job search easier, never harder.
+- **Flat over nested.** The application form is two required fields. Everything else is optional.
+- **User-scoped by default.** Every resource is private unless explicitly made public.
+- **Auto-transitions are silent.** Status changes triggered by user actions (adding a stage, logging an offer) happen automatically, so the UI stays consistent without extra API calls.
+- **Progress, not performance.** Milestones and streaks reward consistency, not volume.
+- **Social without the noise.** Posts and follows are lightweight — a place to share the journey, not perform it.
 
 ---
 
@@ -301,20 +350,23 @@ app/
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | [FastAPI](https://fastapi.tiangolo.com/) |
-| Database | [Supabase](https://supabase.com/) (Managed PostgreSQL + Storage) |
+| Framework | [FastAPI](https://fastapi.tiangolo.com/) 0.100+ |
+| Database | [Supabase](https://supabase.com/) (hosted PostgreSQL + Storage) |
 | DB Client | [supabase-py](https://github.com/supabase/supabase-py) |
-| Auth | JWT (PyJWT) + bcrypt (passlib) |
-| Validation | Pydantic V2 & Pydantic-Settings |
+| Auth | Supabase Auth (JWT) |
+| Validation | Pydantic V2 + Pydantic-Settings |
 | File Upload | Supabase Storage via `python-multipart` |
-| Testing | Pytest + HTTPX (mock Supabase client, no live DB needed) |
+| Testing | Pytest + HTTPX (mock Supabase client — no live DB required) |
+| Python | 3.12+ |
 
 ---
 
-## 9. How to Setup and Run
+## 9. Setup & Running
 
 ### Prerequisites
-- Python 3.12+
+
+- Python 3.12 or later
+- A [Supabase](https://supabase.com/) project
 
 ### Installation
 
@@ -322,21 +374,27 @@ app/
 git clone https://github.com/Keerthu-k/offertracker-backend.git
 cd offertracker-backend
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Database & Storage Configuration
+### Supabase Setup
 
-1. **Create a Supabase project** at [supabase.com](https://supabase.com/).
-2. **Run the schema** — open the SQL Editor and execute the contents of [supabase_schema.sql](supabase_schema.sql).
-3. **Create a Storage bucket** — Dashboard → Storage → New Bucket → name it `resumes` (public).
-4. **Create a `.env` file** in the project root:
-   ```env
-   SUPABASE_URL=https://your-project-ref.supabase.co
-   SUPABASE_KEY=your-anon-or-service-role-key
-   JWT_SECRET_KEY=your-long-random-secret-string
-   ```
+1. Create a new project at [supabase.com](https://supabase.com/).
+2. Open the **SQL Editor** in the Supabase dashboard and run the entire contents of [supabase_schema_final.sql](supabase_schema_final.sql).
+3. Go to **Storage → New Bucket** and create a bucket named `resumes`. Set it to public.
+4. In **Settings → API**, copy your Project URL, `anon` key, `service_role` key, and JWT secret.
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_JWT_SECRET=your-jwt-secret
+```
 
 ### Running the Server
 
@@ -344,15 +402,15 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-| URL | Description |
+| URL | What you get |
 |-----|-------------|
-| `http://127.0.0.1:8000` | Base URL |
-| `http://127.0.0.1:8000/docs` | Swagger UI (interactive) |
-| `http://127.0.0.1:8000/redoc` | ReDoc |
+| `http://127.0.0.1:8000` | API root |
+| `http://127.0.0.1:8000/docs` | Swagger UI — interactive, authenticated |
+| `http://127.0.0.1:8000/redoc` | ReDoc — clean reference view |
 
 ### Running Tests
 
-Tests use a fully in-memory mock Supabase client — no live database needed:
+The test suite uses a fully mocked Supabase client — no live database is needed:
 
 ```bash
 PYTHONPATH=. pytest tests/ -v
@@ -360,9 +418,10 @@ PYTHONPATH=. pytest tests/ -v
 
 ---
 
-## 10. Future Scope
+## 10. Future Direction
 
-- **Advanced Analytics** — stage conversion funnels, time-to-offer metrics, resume-version performance ranking.
-- **AI Integrations** — NLP-powered summarisation of reflections, auto-extracted skill-gap trends.
-- **Notifications** — gentle nudges for streak continuity, group activity, and milestones reached.
-- **Frontend** — a clean, minimal React / Next.js dashboard. The API schema is already documented for handoff.
+- **Richer Analytics** — stage-level conversion funnels, time-to-offer tracking, resume version performance comparison.
+- **AI Integrations** — reflection summarisation, auto-tagged skill gaps, job description keyword analysis.
+- **Notifications** — configurable nudges for streak breaks, reminder deadlines, and milestone triggers.
+- **Granular Privacy** — move beyond the current public/private binary to per-resource visibility controls.
+- **Frontend** — a minimal, focused dashboard. The API schema is fully documented in [api_schema_for_frontend.md](api_schema_for_frontend.md) and ready for handoff.
