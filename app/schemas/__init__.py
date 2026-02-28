@@ -3,7 +3,19 @@ from app.schemas.application import (
     ApplicationCreate, ApplicationUpdate, ApplicationResponse,
     ApplicationStageCreate, ApplicationStageUpdate, ApplicationStageResponse,
     OutcomeCreate, OutcomeUpdate, OutcomeResponse,
-    ReflectionCreate, ReflectionUpdate, ReflectionResponse
+    ReflectionCreate, ReflectionUpdate, ReflectionResponse,
+)
+from app.schemas.user import (
+    UserRegister, UserLogin, UserUpdate, UserResponse, UserPublicProfile, TokenResponse,
+)
+from app.schemas.social import (
+    FollowResponse, FollowStats,
+    GroupCreate, GroupUpdate, GroupResponse, GroupMemberResponse,
+    PostCreate, PostUpdate, PostResponse,
+    ReactionCreate, ReactionResponse,
+)
+from app.schemas.gamification import (
+    MilestoneResponse, UserMilestoneResponse, CommunityMemberEntry, UserStatsResponse,
 )
 
 __all__ = [
@@ -11,5 +23,13 @@ __all__ = [
     "ApplicationCreate", "ApplicationUpdate", "ApplicationResponse",
     "ApplicationStageCreate", "ApplicationStageUpdate", "ApplicationStageResponse",
     "OutcomeCreate", "OutcomeUpdate", "OutcomeResponse",
-    "ReflectionCreate", "ReflectionUpdate", "ReflectionResponse"
+    "ReflectionCreate", "ReflectionUpdate", "ReflectionResponse",
+    "UserRegister", "UserLogin", "UserUpdate", "UserResponse",
+    "UserPublicProfile", "TokenResponse",
+    "FollowResponse", "FollowStats",
+    "GroupCreate", "GroupUpdate", "GroupResponse", "GroupMemberResponse",
+    "PostCreate", "PostUpdate", "PostResponse",
+    "ReactionCreate", "ReactionResponse",
+    "MilestoneResponse", "UserMilestoneResponse",
+    "CommunityMemberEntry", "UserStatsResponse",
 ]
