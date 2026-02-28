@@ -60,6 +60,8 @@ def get_user_profile(
     if not user_row:
         raise HTTPException(status_code=404, detail="User not found")
     # Allow viewing own profile even if private
-    if user_id != current_user["id"] and not user_row.get("is_profile_public", False):
+    profile_visibility = user_row.get("profile_visibility", "private")
+    is_public = user_row.get("is_profile_public", False) or profile_visibility == "public"
+    if user_id != current_user["id"] and not is_public:
         raise HTTPException(status_code=403, detail="Profile is private")
     return user_row

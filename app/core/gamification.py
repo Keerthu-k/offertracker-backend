@@ -89,6 +89,9 @@ def _check_criteria(db: Client, user_id: str, criteria: Dict) -> bool:
     direct_tables = {
         "create_application": "applications",
         "create_post": "shared_posts",
+        "add_contact": "contacts",
+        "create_tag": "tags",
+        "save_job": "saved_jobs",
     }
     if crit_action in direct_tables:
         table = direct_tables[crit_action]
@@ -130,5 +133,47 @@ def _check_criteria(db: Client, user_id: str, criteria: Dict) -> bool:
                 .execute()
             )
             return (resp.count or 0) >= crit_count
+
+    # Prep-notes milestone: count stages with non-null prep_notes
+    if crit_action == "add_prep_notes":
+        apps_resp = (
+            db.table("applications")
+            .select("id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        app_ids = [a["id"] for a in (apps_resp.data or [])]
+        if not app_ids:
+            return False
+        resp = (
+            db.table("application_stages")
+            .select("id", count="exact")
+            .in_("application_id", app_ids)
+            .neq("prep_notes", "null")
+            .execute()
+        )
+        return (resp.count or 0) >= crit_count
+
+    # Converted saved jobs milestone
+    if crit_action == "convert_saved_job":
+        resp = (
+            db.table("saved_jobs")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .eq("status", "Converted")
+            .execute()
+        )
+        return (resp.count or 0) >= crit_count
+
+    # Salary tracking milestone: count applications with salary data
+    if crit_action == "track_salary":
+        resp = (
+            db.table("applications")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .not_.is_("salary_min", "null")
+            .execute()
+        )
+        return (resp.count or 0) >= crit_count
 
     return False

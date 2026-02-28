@@ -30,6 +30,39 @@ class CRUDUser(CRUDBase):
         )
         return resp.data
 
+    def ensure_profile(
+        self,
+        db: Client,
+        *,
+        user_id: str,
+        email: str,
+        username: Optional[str] = None,
+        display_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Ensure a public.users profile exists for a Supabase Auth user."""
+        existing = self.get(db, id=user_id)
+        if existing:
+            return existing
+
+        resolved_username = (username or email.split("@")[0]).strip()
+        resolved_display_name = (display_name or resolved_username).strip()
+
+        payload = {
+            "id": user_id,
+            "email": email,
+            "username": resolved_username,
+            "display_name": resolved_display_name,
+        }
+
+        try:
+            resp = db.table(self.table_name).insert(payload).execute()
+            return resp.data[0] if resp.data else {}
+        except Exception:
+            # Backward compatibility for schemas where password_hash is still NOT NULL.
+            payload["password_hash"] = "supa-auth"
+            resp = db.table(self.table_name).insert(payload).execute()
+            return resp.data[0] if resp.data else {}
+
     # ------------------------------------------------------------------
     # Streak
     # ------------------------------------------------------------------
@@ -74,15 +107,23 @@ class CRUDUser(CRUDBase):
         resp = (
             db.table(self.table_name)
             .select(
-                "id, username, display_name, bio, avatar_url, "
-                "streak_days, created_at"
+                "id, username, display_name, bio, "
+                "streak_days, created_at, is_profile_public, profile_visibility"
             )
             .or_(f"username.ilike.%{query}%,display_name.ilike.%{query}%")
-            .eq("is_profile_public", True)
             .range(skip, skip + limit - 1)
             .execute()
         )
-        return resp.data or []
+        rows = resp.data or []
+        public_rows = [
+            row
+            for row in rows
+            if row.get("is_profile_public") or row.get("profile_visibility") == "public"
+        ]
+        for row in public_rows:
+            row.pop("is_profile_public", None)
+            row.pop("profile_visibility", None)
+        return public_rows
 
 
 user = CRUDUser("users")
