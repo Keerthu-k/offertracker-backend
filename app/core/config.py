@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "OfferTracker API"
     VERSION: str = "0.4.0"
     API_V1_STR: str = "/api/v1"
+    CORS_ORIGINS: str = "*"  # Comma-separated list of origins, e.g. "http://localhost:5173,https://myfrontend.com"
 
     # Supabase configuration
     SUPABASE_URL: str = ""
