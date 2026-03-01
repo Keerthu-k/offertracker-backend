@@ -8,6 +8,8 @@ from supabase import Client
 from app.core.database import get_supabase
 from app.core.dependencies import get_current_user
 from app.core.gamification import track_progress_and_check_milestones
+from app.core.logging import logger
+from app.crud.crud_base import DatabaseError
 from app.crud.crud_social import (
     follow as crud_follow,
     group as crud_group,
@@ -46,12 +48,20 @@ def follow_user(
     """Follow another user."""
     if user_id == current_user["id"]:
         raise HTTPException(status_code=400, detail="Cannot follow yourself")
-    existing = crud_follow.get_follow(db, current_user["id"], user_id)
+    try:
+        existing = crud_follow.get_follow(db, current_user["id"], user_id)
+    except Exception as exc:
+        logger.error("Failed to check follow status: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to check follow status")
     if existing:
         raise HTTPException(status_code=400, detail="Already following this user")
-    result = crud_follow.create(
-        db=db, data={"follower_id": current_user["id"], "following_id": user_id}
-    )
+    try:
+        result = crud_follow.create(
+            db=db, data={"follower_id": current_user["id"], "following_id": user_id}
+        )
+    except DatabaseError as exc:
+        logger.error("Failed to follow user %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to follow user")
     track_progress_and_check_milestones(db, current_user["id"], "follow")
     return result
 
@@ -64,7 +74,11 @@ def unfollow_user(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Unfollow a user."""
-    success = crud_follow.unfollow(db, current_user["id"], user_id)
+    try:
+        success = crud_follow.unfollow(db, current_user["id"], user_id)
+    except Exception as exc:
+        logger.error("Failed to unfollow user %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to unfollow user")
     if not success:
         raise HTTPException(status_code=404, detail="Not following this user")
     return {"detail": "Unfollowed successfully"}
@@ -80,7 +94,11 @@ def get_followers(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """List a user's followers."""
-    return crud_follow.get_followers(db, user_id, skip=skip, limit=limit)
+    try:
+        return crud_follow.get_followers(db, user_id, skip=skip, limit=limit)
+    except Exception as exc:
+        logger.error("Failed to load followers for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to load followers")
 
 
 @router.get("/following/{user_id}", response_model=List[FollowResponse])
@@ -93,7 +111,11 @@ def get_following(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """List the users that *user_id* follows."""
-    return crud_follow.get_following(db, user_id, skip=skip, limit=limit)
+    try:
+        return crud_follow.get_following(db, user_id, skip=skip, limit=limit)
+    except Exception as exc:
+        logger.error("Failed to load following for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to load following list")
 
 
 @router.get("/follow-stats/{user_id}", response_model=FollowStats)
@@ -104,10 +126,14 @@ def get_follow_stats(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Get follower / following counts for a user."""
-    return {
-        "followers_count": crud_follow.count_followers(db, user_id),
-        "following_count": crud_follow.count_following(db, user_id),
-    }
+    try:
+        return {
+            "followers_count": crud_follow.count_followers(db, user_id),
+            "following_count": crud_follow.count_following(db, user_id),
+        }
+    except Exception as exc:
+        logger.error("Failed to load follow stats for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to load follow stats")
 
 
 # ======================================================================
@@ -125,16 +151,20 @@ def create_group(
     """Create a new group (creator is auto-added as admin)."""
     data = group_in.model_dump()
     data["created_by"] = current_user["id"]
-    group_row = crud_group.create(db=db, data=data)
-    # Add creator as admin
-    crud_group_member.create(
-        db=db,
-        data={
-            "group_id": group_row["id"],
-            "user_id": current_user["id"],
-            "role": "admin",
-        },
-    )
+    try:
+        group_row = crud_group.create(db=db, data=data)
+        # Add creator as admin
+        crud_group_member.create(
+            db=db,
+            data={
+                "group_id": group_row["id"],
+                "user_id": current_user["id"],
+                "role": "admin",
+            },
+        )
+    except DatabaseError as exc:
+        logger.error("Failed to create group: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to create group")
     group_row["member_count"] = 1
     return group_row
 
@@ -148,7 +178,11 @@ def list_groups(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """List public groups."""
-    groups = crud_group.get_public_groups(db, skip=skip, limit=limit)
+    try:
+        groups = crud_group.get_public_groups(db, skip=skip, limit=limit)
+    except Exception as exc:
+        logger.error("Failed to list groups: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to load groups")
     for g in groups:
         g.setdefault("member_count", 0)
     return groups
@@ -161,7 +195,11 @@ def list_my_groups(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """List groups the current user belongs to."""
-    groups = crud_group.get_user_groups(db, current_user["id"])
+    try:
+        groups = crud_group.get_user_groups(db, current_user["id"])
+    except Exception as exc:
+        logger.error("Failed to list user groups for %s: %s", current_user["id"], exc)
+        raise HTTPException(status_code=500, detail="Failed to load your groups")
     for g in groups:
         g.setdefault("member_count", 0)
     return groups
@@ -175,7 +213,11 @@ def get_group(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Get group details with member count."""
-    group_row = crud_group.get_with_member_count(db, id=group_id)
+    try:
+        group_row = crud_group.get_with_member_count(db, id=group_id)
+    except Exception as exc:
+        logger.error("Failed to fetch group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch group")
     if not group_row:
         raise HTTPException(status_code=404, detail="Group not found")
     return group_row
@@ -190,13 +232,21 @@ def update_group(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Update a group (creator only)."""
-    group_row = crud_group.get(db, id=group_id)
+    try:
+        group_row = crud_group.get(db, id=group_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch group")
     if not group_row:
         raise HTTPException(status_code=404, detail="Group not found")
     if group_row["created_by"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only group creator can update")
     update_data = group_in.model_dump(exclude_unset=True)
-    updated = crud_group.update(db=db, id=group_id, data=update_data)
+    try:
+        updated = crud_group.update(db=db, id=group_id, data=update_data)
+    except DatabaseError as exc:
+        logger.error("Failed to update group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update group")
     updated.setdefault("member_count", 0)
     return updated
 
@@ -209,12 +259,20 @@ def delete_group(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Delete a group (creator only)."""
-    group_row = crud_group.get(db, id=group_id)
+    try:
+        group_row = crud_group.get(db, id=group_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch group")
     if not group_row:
         raise HTTPException(status_code=404, detail="Group not found")
     if group_row["created_by"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only group creator can delete")
-    crud_group.remove(db=db, id=group_id)
+    try:
+        crud_group.remove(db=db, id=group_id)
+    except DatabaseError as exc:
+        logger.error("Failed to delete group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to delete group")
     return {"detail": "Group deleted"}
 
 
@@ -230,28 +288,42 @@ def join_group(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Join a group."""
-    group_row = crud_group.get(db, id=group_id)
+    try:
+        group_row = crud_group.get(db, id=group_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch group")
     if not group_row:
         raise HTTPException(status_code=404, detail="Group not found")
     # Check existing membership directly
-    existing_resp = (
-        db.table("group_members")
-        .select("*")
-        .eq("group_id", group_id)
-        .eq("user_id", current_user["id"])
-        .maybe_single()
-        .execute()
-    )
-    if existing_resp.data:
-        raise HTTPException(status_code=400, detail="Already a member of this group")
-    result = crud_group_member.create(
-        db=db,
-        data={
-            "group_id": group_id,
-            "user_id": current_user["id"],
-            "role": "member",
-        },
-    )
+    try:
+        existing_resp = (
+            db.table("group_members")
+            .select("*")
+            .eq("group_id", group_id)
+            .eq("user_id", current_user["id"])
+            .maybe_single()
+            .execute()
+        )
+        if existing_resp and existing_resp.data:
+            raise HTTPException(status_code=400, detail="Already a member of this group")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to check group membership: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to check membership")
+    try:
+        result = crud_group_member.create(
+            db=db,
+            data={
+                "group_id": group_id,
+                "user_id": current_user["id"],
+                "role": "member",
+            },
+        )
+    except DatabaseError as exc:
+        logger.error("Failed to join group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to join group")
     track_progress_and_check_milestones(db, current_user["id"], "join_group")
     return result
 
@@ -264,13 +336,17 @@ def leave_group(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Leave a group."""
-    resp = (
-        db.table("group_members")
-        .delete()
-        .eq("group_id", group_id)
-        .eq("user_id", current_user["id"])
-        .execute()
-    )
+    try:
+        resp = (
+            db.table("group_members")
+            .delete()
+            .eq("group_id", group_id)
+            .eq("user_id", current_user["id"])
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("Failed to leave group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to leave group")
     if not resp.data:
         raise HTTPException(status_code=404, detail="Not a member of this group")
     return {"detail": "Left group successfully"}
@@ -284,9 +360,13 @@ def get_group_members(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """List group members."""
-    return crud_group_member.get_multi_by_field(
-        db, field="group_id", value=group_id
-    )
+    try:
+        return crud_group_member.get_multi_by_field(
+            db, field="group_id", value=group_id
+        )
+    except DatabaseError as exc:
+        logger.error("Failed to list members for group %s: %s", group_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to load group members")
 
 
 # ======================================================================
@@ -304,7 +384,11 @@ def create_post(
     """Create a new post (update, tip, milestone, question)."""
     data = post_in.model_dump()
     data["user_id"] = current_user["id"]
-    result = crud_post.create(db=db, data=data)
+    try:
+        result = crud_post.create(db=db, data=data)
+    except DatabaseError as exc:
+        logger.error("Failed to create post: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to create post")
     result.setdefault("reaction_count", 0)
     track_progress_and_check_milestones(db, current_user["id"], "create_post")
     return result
@@ -320,7 +404,11 @@ def get_feed(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Get the public feed, or a group feed if *group_id* is provided."""
-    posts = crud_post.get_feed(db, group_id=group_id, skip=skip, limit=limit)
+    try:
+        posts = crud_post.get_feed(db, group_id=group_id, skip=skip, limit=limit)
+    except Exception as exc:
+        logger.error("Failed to load feed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to load feed")
     for p in posts:
         p.setdefault("reaction_count", 0)
     return posts
@@ -335,7 +423,11 @@ def get_my_posts(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Get the current user's own posts."""
-    posts = crud_post.get_user_posts(db, current_user["id"], skip=skip, limit=limit)
+    try:
+        posts = crud_post.get_user_posts(db, current_user["id"], skip=skip, limit=limit)
+    except Exception as exc:
+        logger.error("Failed to load posts for user %s: %s", current_user["id"], exc)
+        raise HTTPException(status_code=500, detail="Failed to load your posts")
     for p in posts:
         p.setdefault("reaction_count", 0)
     return posts
@@ -350,13 +442,21 @@ def update_post(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Update a post (author only)."""
-    post_row = crud_post.get(db, id=post_id)
+    try:
+        post_row = crud_post.get(db, id=post_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch post %s: %s", post_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch post")
     if not post_row:
         raise HTTPException(status_code=404, detail="Post not found")
     if post_row["user_id"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Not your post")
     update_data = post_in.model_dump(exclude_unset=True)
-    result = crud_post.update(db=db, id=post_id, data=update_data)
+    try:
+        result = crud_post.update(db=db, id=post_id, data=update_data)
+    except DatabaseError as exc:
+        logger.error("Failed to update post %s: %s", post_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update post")
     result.setdefault("reaction_count", 0)
     return result
 
@@ -369,12 +469,20 @@ def delete_post(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Delete a post (author only)."""
-    post_row = crud_post.get(db, id=post_id)
+    try:
+        post_row = crud_post.get(db, id=post_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch post %s: %s", post_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch post")
     if not post_row:
         raise HTTPException(status_code=404, detail="Post not found")
     if post_row["user_id"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Not your post")
-    crud_post.remove(db=db, id=post_id)
+    try:
+        crud_post.remove(db=db, id=post_id)
+    except DatabaseError as exc:
+        logger.error("Failed to delete post %s: %s", post_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to delete post")
     return {"detail": "Post deleted"}
 
 
@@ -391,17 +499,25 @@ def react_to_post(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """React to a post."""
-    post_row = crud_post.get(db, id=post_id)
+    try:
+        post_row = crud_post.get(db, id=post_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch post %s: %s", post_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch post")
     if not post_row:
         raise HTTPException(status_code=404, detail="Post not found")
-    return crud_reaction.create(
-        db=db,
-        data={
-            "post_id": post_id,
-            "user_id": current_user["id"],
-            "reaction": reaction_in.reaction,
-        },
-    )
+    try:
+        return crud_reaction.create(
+            db=db,
+            data={
+                "post_id": post_id,
+                "user_id": current_user["id"],
+                "reaction": reaction_in.reaction,
+            },
+        )
+    except DatabaseError as exc:
+        logger.error("Failed to react to post %s: %s", post_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to add reaction")
 
 
 @router.delete("/posts/{post_id}/react")
@@ -412,13 +528,17 @@ def remove_reaction(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Any:
     """Remove your reaction from a post."""
-    resp = (
-        db.table("post_reactions")
-        .delete()
-        .eq("post_id", post_id)
-        .eq("user_id", current_user["id"])
-        .execute()
-    )
+    try:
+        resp = (
+            db.table("post_reactions")
+            .delete()
+            .eq("post_id", post_id)
+            .eq("user_id", current_user["id"])
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("Failed to remove reaction from post %s: %s", post_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to remove reaction")
     if not resp.data:
         raise HTTPException(status_code=404, detail="No reaction to remove")
     return {"detail": "Reaction removed"}

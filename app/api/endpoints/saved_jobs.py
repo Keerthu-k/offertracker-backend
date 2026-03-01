@@ -23,6 +23,8 @@ from supabase import Client
 from app.core.database import get_supabase
 from app.core.dependencies import get_current_user
 from app.core.gamification import track_progress_and_check_milestones
+from app.core.logging import logger
+from app.crud.crud_base import DatabaseError
 from app.crud.crud_saved_job import saved_job as crud_saved_job
 from app.crud.crud_activity import log_activity
 from app import crud, schemas
@@ -31,7 +33,11 @@ router = APIRouter()
 
 
 def _verify_ownership(db: Client, current_user: dict, saved_job_id: str) -> dict:
-    row = crud_saved_job.get(db, id=saved_job_id)
+    try:
+        row = crud_saved_job.get(db, id=saved_job_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch saved job %s: %s", saved_job_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch saved job")
     if not row:
         raise HTTPException(status_code=404, detail="Saved job not found")
     if row.get("user_id") != current_user["id"]:
@@ -54,14 +60,18 @@ def list_saved_jobs(
     limit: int = 100,
 ) -> Any:
     """List saved jobs, optionally filtered by status and/or priority."""
-    return crud_saved_job.get_user_saved_jobs(
-        db,
-        current_user["id"],
-        status=status,
-        priority=priority,
-        skip=skip,
-        limit=limit,
-    )
+    try:
+        return crud_saved_job.get_user_saved_jobs(
+            db,
+            current_user["id"],
+            status=status,
+            priority=priority,
+            skip=skip,
+            limit=limit,
+        )
+    except Exception as exc:
+        logger.error("Failed to list saved jobs for user %s: %s", current_user["id"], exc)
+        raise HTTPException(status_code=500, detail="Failed to load saved jobs")
 
 
 @router.post("/", response_model=schemas.SavedJobResponse, status_code=201)
@@ -77,7 +87,11 @@ def create_saved_job(
     if "deadline" in data and data["deadline"] is not None:
         data["deadline"] = str(data["deadline"])
 
-    result = crud_saved_job.create(db=db, data=data)
+    try:
+        result = crud_saved_job.create(db=db, data=data)
+    except DatabaseError as exc:
+        logger.error("Failed to save job: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to save job")
 
     log_activity(
         db,
@@ -126,7 +140,11 @@ def update_saved_job(
     if "deadline" in update_data and update_data["deadline"] is not None:
         update_data["deadline"] = str(update_data["deadline"])
 
-    return crud_saved_job.update(db=db, id=saved_job_id, data=update_data)
+    try:
+        return crud_saved_job.update(db=db, id=saved_job_id, data=update_data)
+    except DatabaseError as exc:
+        logger.error("Failed to update saved job %s: %s", saved_job_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update saved job")
 
 
 @router.delete("/{saved_job_id}")
@@ -138,7 +156,11 @@ def delete_saved_job(
 ) -> Any:
     """Delete a saved job."""
     _verify_ownership(db, current_user, saved_job_id)
-    crud_saved_job.remove(db=db, id=saved_job_id)
+    try:
+        crud_saved_job.remove(db=db, id=saved_job_id)
+    except DatabaseError as exc:
+        logger.error("Failed to delete saved job %s: %s", saved_job_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to delete saved job")
     return {"detail": "Saved job deleted"}
 
 
@@ -190,20 +212,28 @@ def convert_to_application(
         elif field in saved and saved[field] is not None:
             app_data[field] = saved[field]
 
-    new_app = crud.application.create(db=db, data=app_data)
+    try:
+        new_app = crud.application.create(db=db, data=app_data)
+    except DatabaseError as exc:
+        logger.error("Failed to convert saved job %s to application: %s", saved_job_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to create application from saved job")
+
     new_app.setdefault("stages", [])
     new_app.setdefault("outcome", None)
     new_app.setdefault("reflection", None)
 
     # Mark saved job as Converted
-    crud_saved_job.update(
-        db=db,
-        id=saved_job_id,
-        data={
-            "status": "Converted",
-            "converted_to_application_id": new_app["id"],
-        },
-    )
+    try:
+        crud_saved_job.update(
+            db=db,
+            id=saved_job_id,
+            data={
+                "status": "Converted",
+                "converted_to_application_id": new_app["id"],
+            },
+        )
+    except DatabaseError as exc:
+        logger.warning("Failed to mark saved job %s as converted: %s", saved_job_id, exc)
 
     log_activity(
         db,
