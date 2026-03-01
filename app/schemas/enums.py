@@ -15,16 +15,16 @@ from enum import Enum
 class ApplicationStatus(str, Enum):
     """Where an application sits in the hiring pipeline.
 
-    Happy path:  Saved → Applied → Interviewing → Offer → Accepted
-    At any point the applicant may Withdraw or be Rejected.
+    Happy path:  Open → Applied → Shortlisted → Interview → Offer → Closed
+    At any point the application may be Rejected or Closed.
     """
-    SAVED        = "Saved"
+    OPEN         = "Open"
     APPLIED      = "Applied"
-    INTERVIEWING = "Interviewing"
+    SHORTLISTED  = "Shortlisted"
+    INTERVIEW    = "Interview"
     OFFER        = "Offer"
-    ACCEPTED     = "Accepted"
     REJECTED     = "Rejected"
-    WITHDRAWN    = "Withdrawn"
+    CLOSED       = "Closed"
 
 
 # ------------------------------------------------------------------ #

@@ -1,14 +1,14 @@
 """Application endpoints — the core of OfferTracker.
 
 Status flow:
-  Saved → Applied → Interviewing → Offer → Accepted
-                                        → Rejected (at any point)
-                                        → Withdrawn (at any point)
+  Open → Applied → Shortlisted → Interview → Offer → Closed
+                                                    → Rejected (at any point)
+                                                    → Closed (user withdraws at any point)
 
 Auto-transitions:
   - Creating with status Applied auto-sets applied_date to today
-  - Changing status Saved → Applied auto-sets applied_date
-  - Adding a stage auto-transitions Applied → Interviewing
+  - Changing status Open → Applied auto-sets applied_date
+  - Adding a stage auto-transitions Applied → Interview
   - Adding an outcome (offer) auto-transitions to Offer
 """
 
@@ -95,7 +95,7 @@ def create_application(
     current_user: Dict[str, Any] = Depends(get_current_user),
     application_in: schemas.ApplicationCreate,
 ) -> Any:
-    """Create a new application (default status: Saved)."""
+    """Create a new application (default status: Open)."""
     data = application_in.model_dump(exclude_none=True)
     data["user_id"] = current_user["id"]
 
@@ -159,10 +159,10 @@ def update_application(
     old_status = existing.get("status")
     new_status = update_data.get("status")
 
-    # Auto-set applied_date when transitioning Saved → Applied
+    # Auto-set applied_date when transitioning Open → Applied
     if (
         new_status == "Applied"
-        and old_status == "Saved"
+        and old_status == "Open"
         and "applied_date" not in update_data
     ):
         update_data["applied_date"] = str(date_type.today())
@@ -230,16 +230,16 @@ def add_stage(
 
     result = crud.application_stage.create(db=db, data=data)
 
-    # Auto-transition: Applied → Interviewing
+    # Auto-transition: Applied → Interview
     if existing.get("status") == "Applied":
-        crud.application.update(db=db, id=id, data={"status": "Interviewing"})
+        crud.application.update(db=db, id=id, data={"status": "Interview"})
         log_activity(
             db,
             user_id=current_user["id"],
             action="Status Changed",
-            description="Status: Applied → Interviewing (auto)",
+            description="Status: Applied → Interview (auto)",
             application_id=id,
-            metadata={"old_status": "Applied", "new_status": "Interviewing", "auto": True},
+            metadata={"old_status": "Applied", "new_status": "Interview", "auto": True},
         )
 
     log_activity(
@@ -338,9 +338,9 @@ def set_outcome(
 
     result = crud.outcome.create(db=db, data=data)
 
-    # Auto-transition to Offer (unless already Accepted)
+    # Auto-transition to Offer (unless already Closed)
     old_status = app.get("status")
-    if old_status not in ("Offer", "Accepted"):
+    if old_status not in ("Offer", "Closed"):
         crud.application.update(db=db, id=id, data={"status": "Offer"})
         log_activity(
             db,

@@ -70,12 +70,12 @@ def get_dashboard(
     # ------------------------------------------------------------------
     # 3. Rates — based on status values
     # ------------------------------------------------------------------
-    non_saved = [a for a in apps if a.get("status") != "Saved"]
+    non_saved = [a for a in apps if a.get("status") != "Open"]
     total_tracked = len(non_saved)
 
-    responded_statuses = {"Interviewing", "Offer", "Accepted", "Rejected"}
-    interview_statuses = {"Interviewing", "Offer", "Accepted"}
-    offer_statuses = {"Offer", "Accepted"}
+    responded_statuses = {"Shortlisted", "Interview", "Offer", "Rejected", "Closed"}
+    interview_statuses = {"Interview", "Offer", "Closed"}
+    offer_statuses = {"Offer", "Closed"}
 
     responded = sum(
         1 for a in non_saved

@@ -37,7 +37,7 @@ async def test_full_application_lifecycle(client: AsyncClient):
             "status": "Applied",
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     app_id = resp.json()["id"]
 
     # 3. Add stage
@@ -45,14 +45,14 @@ async def test_full_application_lifecycle(client: AsyncClient):
         f"/api/v1/applications/{app_id}/stages",
         json={"application_id": app_id, "stage_name": "Technical Screen"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
 
     # 4. Set outcome
     resp = await client.post(
         f"/api/v1/applications/{app_id}/outcome",
         json={"application_id": app_id, "status": "Rejected"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
 
     # 5. Add reflection
     resp = await client.post(
@@ -63,7 +63,7 @@ async def test_full_application_lifecycle(client: AsyncClient):
             "skill_gaps": {"DSA": "medium"},
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
 
     # 6. Fetch application and verify relations
     resp = await client.get(f"/api/v1/applications/{app_id}")
@@ -284,7 +284,7 @@ async def test_create_post(client: AsyncClient):
     resp = await client.post(
         "/api/v1/social/posts",
         json={
-            "post_type": "tip",
+            "post_type": "Tip",
             "title": "Resume Tips",
             "content": "Use action verbs",
         },
