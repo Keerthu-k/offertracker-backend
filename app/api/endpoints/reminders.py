@@ -14,6 +14,8 @@ from supabase import Client
 from app.core.database import get_supabase
 from app.core.dependencies import get_current_user
 from app.core.gamification import track_progress_and_check_milestones
+from app.core.logging import logger
+from app.crud.crud_base import DatabaseError
 from app.crud.crud_reminder import reminder as crud_reminder
 from app.crud.crud_activity import log_activity
 from app import schemas
@@ -32,14 +34,18 @@ def list_reminders(
     limit: int = 100,
 ) -> Any:
     """List reminders, optionally filtered by completion status or type."""
-    return crud_reminder.get_user_reminders(
-        db,
-        current_user["id"],
-        is_completed=is_completed,
-        reminder_type=reminder_type,
-        skip=skip,
-        limit=limit,
-    )
+    try:
+        return crud_reminder.get_user_reminders(
+            db,
+            current_user["id"],
+            is_completed=is_completed,
+            reminder_type=reminder_type,
+            skip=skip,
+            limit=limit,
+        )
+    except Exception as exc:
+        logger.error("Failed to list reminders for user %s: %s", current_user["id"], exc)
+        raise HTTPException(status_code=500, detail="Failed to load reminders")
 
 
 @router.get("/upcoming", response_model=List[schemas.ReminderResponse])
@@ -50,7 +56,11 @@ def upcoming_reminders(
     limit: int = 10,
 ) -> Any:
     """Get the next upcoming incomplete reminders."""
-    return crud_reminder.get_upcoming(db, current_user["id"], limit=limit)
+    try:
+        return crud_reminder.get_upcoming(db, current_user["id"], limit=limit)
+    except Exception as exc:
+        logger.error("Failed to load upcoming reminders for user %s: %s", current_user["id"], exc)
+        raise HTTPException(status_code=500, detail="Failed to load upcoming reminders")
 
 
 @router.post("/", response_model=schemas.ReminderResponse, status_code=201)
@@ -66,7 +76,11 @@ def create_reminder(
     # Convert datetime to ISO string for JSON serialisation
     if data.get("remind_at"):
         data["remind_at"] = data["remind_at"].isoformat()
-    result = crud_reminder.create(db=db, data=data)
+    try:
+        result = crud_reminder.create(db=db, data=data)
+    except DatabaseError as exc:
+        logger.error("Failed to create reminder: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to create reminder")
     log_activity(
         db,
         user_id=current_user["id"],
@@ -85,7 +99,11 @@ def get_reminder(
     reminder_id: str,
 ) -> Any:
     """Get a reminder by ID."""
-    row = crud_reminder.get(db, id=reminder_id)
+    try:
+        row = crud_reminder.get(db, id=reminder_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch reminder %s: %s", reminder_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch reminder")
     if not row:
         raise HTTPException(status_code=404, detail="Reminder not found")
     if row.get("user_id") != current_user["id"]:
@@ -102,7 +120,11 @@ def update_reminder(
     reminder_in: schemas.ReminderUpdate,
 ) -> Any:
     """Update a reminder."""
-    existing = crud_reminder.get(db, id=reminder_id)
+    try:
+        existing = crud_reminder.get(db, id=reminder_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch reminder %s: %s", reminder_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch reminder")
     if not existing:
         raise HTTPException(status_code=404, detail="Reminder not found")
     if existing.get("user_id") != current_user["id"]:
@@ -110,7 +132,11 @@ def update_reminder(
     update_data = reminder_in.model_dump(exclude_unset=True)
     if "remind_at" in update_data and update_data["remind_at"]:
         update_data["remind_at"] = update_data["remind_at"].isoformat()
-    return crud_reminder.update(db=db, id=reminder_id, data=update_data)
+    try:
+        return crud_reminder.update(db=db, id=reminder_id, data=update_data)
+    except DatabaseError as exc:
+        logger.error("Failed to update reminder %s: %s", reminder_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update reminder")
 
 
 @router.post("/{reminder_id}/complete", response_model=schemas.ReminderResponse)
@@ -121,14 +147,22 @@ def complete_reminder(
     reminder_id: str,
 ) -> Any:
     """Mark a reminder as completed."""
-    existing = crud_reminder.get(db, id=reminder_id)
+    try:
+        existing = crud_reminder.get(db, id=reminder_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch reminder %s: %s", reminder_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch reminder")
     if not existing:
         raise HTTPException(status_code=404, detail="Reminder not found")
     if existing.get("user_id") != current_user["id"]:
         raise HTTPException(status_code=403, detail="Not your reminder")
     if existing.get("is_completed"):
         raise HTTPException(status_code=400, detail="Reminder already completed")
-    result = crud_reminder.mark_completed(db, reminder_id)
+    try:
+        result = crud_reminder.mark_completed(db, reminder_id)
+    except Exception as exc:
+        logger.error("Failed to complete reminder %s: %s", reminder_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to complete reminder")
     log_activity(
         db,
         user_id=current_user["id"],
@@ -148,10 +182,18 @@ def delete_reminder(
     reminder_id: str,
 ) -> Any:
     """Delete a reminder."""
-    existing = crud_reminder.get(db, id=reminder_id)
+    try:
+        existing = crud_reminder.get(db, id=reminder_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch reminder %s: %s", reminder_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch reminder")
     if not existing:
         raise HTTPException(status_code=404, detail="Reminder not found")
     if existing.get("user_id") != current_user["id"]:
         raise HTTPException(status_code=403, detail="Not your reminder")
-    crud_reminder.remove(db=db, id=reminder_id)
+    try:
+        crud_reminder.remove(db=db, id=reminder_id)
+    except DatabaseError as exc:
+        logger.error("Failed to delete reminder %s: %s", reminder_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to delete reminder")
     return {"detail": "Reminder deleted"}

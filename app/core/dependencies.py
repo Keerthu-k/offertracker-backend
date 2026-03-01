@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client
 
 from app.core.database import get_supabase
+from app.core.logging import logger
 from app.crud.crud_user import user as crud_user
 
 bearer_scheme = HTTPBearer()
@@ -29,7 +30,10 @@ def get_current_user(
         
         if not user_id:
             raise ValueError("Missing subject")
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.warning("Auth token verification failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid or expired token: {str(e)}",
@@ -37,14 +41,21 @@ def get_current_user(
         )
 
     # 2. Get the user from our custom defined `users` table
-    resp = (
-        db.table("users")
-        .select("*")
-        .eq("id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    user = resp.data
+    try:
+        resp = (
+            db.table("users")
+            .select("*")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        user = resp.data if resp is not None else None
+    except Exception as e:
+        logger.error("Failed to fetch user profile for %s: %s", user_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve user profile",
+        )
 
     if not user:
         if not auth_email:
@@ -53,12 +64,20 @@ def get_current_user(
                 detail="User profile not found and token has no email claim",
             )
 
-        user = crud_user.ensure_profile(
-            db,
-            user_id=user_id,
-            email=auth_email,
-            username=auth_metadata.get("username"),
-            display_name=auth_metadata.get("display_name"),
-        )
+        try:
+            user = crud_user.ensure_profile(
+                db,
+                user_id=user_id,
+                email=auth_email,
+                username=auth_metadata.get("username"),
+                display_name=auth_metadata.get("display_name"),
+            )
+            logger.info("Auto-created user profile for %s (%s)", user_id, auth_email)
+        except Exception as e:
+            logger.error("Failed to auto-create profile for %s: %s", user_id, e)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create user profile",
+            )
 
     return user

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.core.database import get_supabase
+from app.core.logging import logger
 from app.crud.crud_user import user as crud_user
 from app.crud.crud_gamification import (
     milestone as crud_milestone,
@@ -29,12 +30,18 @@ def register(
     user_in: UserRegister,
 ) -> Any:
     """Register a new user account via Supabase Auth."""
-    # Check if username exists in public schema first before talking to Supabase Auth
-    if crud_user.get_by_username(db, user_in.username):
-        raise HTTPException(status_code=400, detail="Username already taken")
+    try:
+        # Check if username exists in public schema first before talking to Supabase Auth
+        if crud_user.get_by_username(db, user_in.username):
+            raise HTTPException(status_code=400, detail="Username already taken")
 
-    if crud_user.get_by_email(db, user_in.email):
-        raise HTTPException(status_code=400, detail="Email already taken")
+        if crud_user.get_by_email(db, user_in.email):
+            raise HTTPException(status_code=400, detail="Email already taken")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Pre-registration check failed for %s: %s", user_in.email, exc)
+        raise HTTPException(status_code=500, detail="Registration check failed")
 
     # 1. Sign up user via Supabase Auth
     try:
@@ -51,7 +58,8 @@ def register(
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("Supabase Auth sign_up failed for %s: %s", user_in.email, e)
+        raise HTTPException(status_code=400, detail=f"Registration failed: {e}")
 
     auth_user = auth_response.user
     if not auth_user:
@@ -60,23 +68,29 @@ def register(
     user_id = auth_user.id
 
     # Ensure profile exists (trigger-first, API fallback if trigger not present yet).
-    user_row = crud_user.ensure_profile(
-        db,
-        user_id=user_id,
-        email=user_in.email,
-        username=user_in.username,
-        display_name=user_in.display_name,
-    )
+    try:
+        user_row = crud_user.ensure_profile(
+            db,
+            user_id=user_id,
+            email=user_in.email,
+            username=user_in.username,
+            display_name=user_in.display_name,
+        )
+    except Exception as exc:
+        logger.error("Failed to create user profile for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to create user profile")
 
     # Award the "Getting Started" milestone
-    getting_started = crud_milestone.get_by_field(
-        db, field="name", value="Getting Started"
-    )
-    if getting_started:
-        try:
+    try:
+        getting_started = crud_milestone.get_by_field(
+            db, field="name", value="Getting Started"
+        )
+        if getting_started:
             crud_user_milestone.award(db, user_row["id"], getting_started["id"])
-        except Exception:
-            pass  # Non-critical
+    except Exception:
+        pass  # Non-critical
+
+    logger.info("User registered: %s (%s)", user_in.username, user_in.email)
 
     return {
         "access_token": auth_response.session.access_token if auth_response.session else "",
@@ -99,8 +113,9 @@ def login(
                 "password": credentials.password,
             }
         )
-    except Exception:
+    except Exception as exc:
         # Supabase raises exception for incorrect credentials
+        logger.info("Login failed for %s: %s", credentials.email, exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -114,17 +129,26 @@ def login(
 
     user_id = auth_response.user.id
 
-    user_metadata = auth_response.user.user_metadata or {}
-    user_row = crud_user.ensure_profile(
-        db,
-        user_id=user_id,
-        email=auth_response.user.email or credentials.email,
-        username=user_metadata.get("username"),
-        display_name=user_metadata.get("display_name"),
-    )
+    try:
+        user_metadata = auth_response.user.user_metadata or {}
+        user_row = crud_user.ensure_profile(
+            db,
+            user_id=user_id,
+            email=auth_response.user.email or credentials.email,
+            username=user_metadata.get("username"),
+            display_name=user_metadata.get("display_name"),
+        )
+    except Exception as exc:
+        logger.error("Failed to ensure profile on login for %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to load user profile")
 
-    # Update streak on login
-    crud_user.update_streak(db, user_row["id"])
+    # Update streak on login (non-critical)
+    try:
+        crud_user.update_streak(db, user_row["id"])
+    except Exception as exc:
+        logger.warning("Streak update failed on login for %s: %s", user_id, exc)
+
+    logger.info("User logged in: %s", credentials.email)
 
     return {
         "access_token": auth_response.session.access_token,

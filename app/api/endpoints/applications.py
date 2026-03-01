@@ -21,6 +21,8 @@ from supabase import Client
 from app.core.database import get_supabase
 from app.core.dependencies import get_current_user
 from app.core.gamification import track_progress_and_check_milestones
+from app.core.logging import logger
+from app.crud.crud_base import DatabaseError
 from app.crud.crud_activity import log_activity
 from app import crud, schemas
 
@@ -51,7 +53,11 @@ def _ensure_nested(row: dict) -> dict:
 
 def _verify_ownership(db, current_user, app_id: str):
     """Fetch application and verify the current user owns it."""
-    app = crud.application.get(db, id=app_id)
+    try:
+        app = crud.application.get(db, id=app_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch application %s: %s", app_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch application")
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     if app.get("user_id") != current_user["id"]:
@@ -78,14 +84,18 @@ def read_applications(
 
     Optional query params: ``status``, ``priority``.
     """
-    return crud.application.get_multi_with_relations(
-        db,
-        user_id=current_user["id"],
-        skip=skip,
-        limit=limit,
-        status=status,
-        priority=priority,
-    )
+    try:
+        return crud.application.get_multi_with_relations(
+            db,
+            user_id=current_user["id"],
+            skip=skip,
+            limit=limit,
+            status=status,
+            priority=priority,
+        )
+    except Exception as exc:
+        logger.error("Failed to list applications for user %s: %s", current_user["id"], exc)
+        raise HTTPException(status_code=500, detail="Failed to load applications")
 
 
 @router.post("/", response_model=schemas.ApplicationResponse, status_code=201)
@@ -101,7 +111,10 @@ def create_application(
 
     # Validate resume link if provided
     if data.get("resume_version_id"):
-        resume = crud.resume_version.get(db, id=data["resume_version_id"])
+        try:
+            resume = crud.resume_version.get(db, id=data["resume_version_id"])
+        except DatabaseError:
+            resume = None
         if not resume:
             raise HTTPException(status_code=404, detail="Resume version not found")
 
@@ -111,9 +124,13 @@ def create_application(
 
     _serialise_dates(data, DATE_FIELDS)
 
-    row = _ensure_nested(crud.application.create(db=db, data=data))
+    try:
+        row = _ensure_nested(crud.application.create(db=db, data=data))
+    except DatabaseError as exc:
+        logger.error("Failed to create application: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to create application")
 
-    # Activity + milestones
+    # Activity + milestones (non-critical)
     log_activity(
         db,
         user_id=current_user["id"],
@@ -136,7 +153,11 @@ def read_application(
     id: str,
 ) -> Any:
     """Get application by ID with nested relations."""
-    application = crud.application.get_with_relations(db, id=id)
+    try:
+        application = crud.application.get_with_relations(db, id=id)
+    except Exception as exc:
+        logger.error("Failed to fetch application %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch application")
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
     if application.get("user_id") != current_user["id"]:
@@ -169,9 +190,13 @@ def update_application(
 
     _serialise_dates(update_data, DATE_FIELDS)
 
-    row = _ensure_nested(crud.application.update(db=db, id=id, data=update_data))
+    try:
+        row = _ensure_nested(crud.application.update(db=db, id=id, data=update_data))
+    except DatabaseError as exc:
+        logger.error("Failed to update application %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update application")
 
-    # Log status change or general update
+    # Log status change or general update (non-critical)
     if new_status and new_status != old_status:
         log_activity(
             db,
@@ -202,7 +227,11 @@ def delete_application(
 ) -> Any:
     """Delete an application and all related data."""
     _verify_ownership(db, current_user, id)
-    crud.application.remove(db=db, id=id)
+    try:
+        crud.application.remove(db=db, id=id)
+    except DatabaseError as exc:
+        logger.error("Failed to delete application %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to delete application")
     return {"detail": "Application deleted"}
 
 
@@ -228,19 +257,26 @@ def add_stage(
     if data.get("stage_date"):
         data["stage_date"] = str(data["stage_date"])
 
-    result = crud.application_stage.create(db=db, data=data)
+    try:
+        result = crud.application_stage.create(db=db, data=data)
+    except DatabaseError as exc:
+        logger.error("Failed to add stage to application %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to add interview stage")
 
     # Auto-transition: Applied → Interview
     if existing.get("status") == "Applied":
-        crud.application.update(db=db, id=id, data={"status": "Interview"})
-        log_activity(
-            db,
-            user_id=current_user["id"],
-            action="Status Changed",
-            description="Status: Applied → Interview (auto)",
-            application_id=id,
-            metadata={"old_status": "Applied", "new_status": "Interview", "auto": True},
-        )
+        try:
+            crud.application.update(db=db, id=id, data={"status": "Interview"})
+            log_activity(
+                db,
+                user_id=current_user["id"],
+                action="Status Changed",
+                description="Status: Applied → Interview (auto)",
+                application_id=id,
+                metadata={"old_status": "Applied", "new_status": "Interview", "auto": True},
+            )
+        except Exception as exc:
+            logger.warning("Auto-transition to Interview failed for %s: %s", id, exc)
 
     log_activity(
         db,
@@ -267,7 +303,11 @@ def update_stage(
 ) -> Any:
     """Update an interview stage."""
     _verify_ownership(db, current_user, id)
-    existing = crud.application_stage.get(db, id=stage_id)
+    try:
+        existing = crud.application_stage.get(db, id=stage_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch stage %s: %s", stage_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch stage")
     if not existing or existing.get("application_id") != id:
         raise HTTPException(status_code=404, detail="Stage not found")
 
@@ -277,7 +317,11 @@ def update_stage(
     if "questions_asked" in update_data and update_data["questions_asked"] is None:
         update_data["questions_asked"] = []
 
-    return crud.application_stage.update(db=db, id=stage_id, data=update_data)
+    try:
+        return crud.application_stage.update(db=db, id=stage_id, data=update_data)
+    except DatabaseError as exc:
+        logger.error("Failed to update stage %s: %s", stage_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update stage")
 
 
 @router.delete("/{id}/stages/{stage_id}")
@@ -290,10 +334,18 @@ def delete_stage(
 ) -> Any:
     """Delete an interview stage."""
     _verify_ownership(db, current_user, id)
-    existing = crud.application_stage.get(db, id=stage_id)
+    try:
+        existing = crud.application_stage.get(db, id=stage_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch stage %s: %s", stage_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch stage")
     if not existing or existing.get("application_id") != id:
         raise HTTPException(status_code=404, detail="Stage not found")
-    crud.application_stage.remove(db=db, id=stage_id)
+    try:
+        crud.application_stage.remove(db=db, id=stage_id)
+    except DatabaseError as exc:
+        logger.error("Failed to delete stage %s: %s", stage_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to delete stage")
     return {"detail": "Stage deleted"}
 
 
@@ -317,18 +369,24 @@ def set_outcome(
     app = _verify_ownership(db, current_user, id)
 
     # Check for existing outcome (one-to-one)
-    existing_outcome = (
-        db.table("outcomes")
-        .select("id")
-        .eq("application_id", id)
-        .maybe_single()
-        .execute()
-    )
-    if existing_outcome.data:
-        raise HTTPException(
-            status_code=409,
-            detail="This application already has offer details. Use PUT to update.",
+    try:
+        existing_outcome = (
+            db.table("outcomes")
+            .select("id")
+            .eq("application_id", id)
+            .maybe_single()
+            .execute()
         )
+        if existing_outcome and existing_outcome.data:
+            raise HTTPException(
+                status_code=409,
+                detail="This application already has offer details. Use PUT to update.",
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to check existing outcome for application %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to check existing outcome")
 
     data = outcome_in.model_dump(exclude_none=True)
     data["application_id"] = id
@@ -336,20 +394,27 @@ def set_outcome(
 
     _serialise_dates(data, OUTCOME_DATE_FIELDS)
 
-    result = crud.outcome.create(db=db, data=data)
+    try:
+        result = crud.outcome.create(db=db, data=data)
+    except DatabaseError as exc:
+        logger.error("Failed to create outcome for application %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to record offer details")
 
     # Auto-transition to Offer (unless already Closed)
     old_status = app.get("status")
     if old_status not in ("Offer", "Closed"):
-        crud.application.update(db=db, id=id, data={"status": "Offer"})
-        log_activity(
-            db,
-            user_id=current_user["id"],
-            action="Status Changed",
-            description=f"Status: {old_status} → Offer (offer received)",
-            application_id=id,
-            metadata={"old_status": old_status, "new_status": "Offer", "auto": True},
-        )
+        try:
+            crud.application.update(db=db, id=id, data={"status": "Offer"})
+            log_activity(
+                db,
+                user_id=current_user["id"],
+                action="Status Changed",
+                description=f"Status: {old_status} → Offer (offer received)",
+                application_id=id,
+                metadata={"old_status": old_status, "new_status": "Offer", "auto": True},
+            )
+        except Exception as exc:
+            logger.warning("Auto-transition to Offer failed for %s: %s", id, exc)
 
     log_activity(
         db,
@@ -374,7 +439,11 @@ def update_outcome(
 ) -> Any:
     """Update offer details."""
     _verify_ownership(db, current_user, id)
-    existing = crud.outcome.get(db, id=outcome_id)
+    try:
+        existing = crud.outcome.get(db, id=outcome_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch outcome %s: %s", outcome_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch outcome")
     if not existing or existing.get("application_id") != id:
         raise HTTPException(status_code=404, detail="Outcome not found")
 
@@ -383,7 +452,11 @@ def update_outcome(
         update_data.pop("status")
     _serialise_dates(update_data, OUTCOME_DATE_FIELDS)
 
-    return crud.outcome.update(db=db, id=outcome_id, data=update_data)
+    try:
+        return crud.outcome.update(db=db, id=outcome_id, data=update_data)
+    except DatabaseError as exc:
+        logger.error("Failed to update outcome %s: %s", outcome_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update outcome")
 
 
 @router.delete("/{id}/outcome/{outcome_id}")
@@ -396,10 +469,18 @@ def delete_outcome(
 ) -> Any:
     """Delete offer details."""
     _verify_ownership(db, current_user, id)
-    existing = crud.outcome.get(db, id=outcome_id)
+    try:
+        existing = crud.outcome.get(db, id=outcome_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch outcome %s: %s", outcome_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch outcome")
     if not existing or existing.get("application_id") != id:
         raise HTTPException(status_code=404, detail="Outcome not found")
-    crud.outcome.remove(db=db, id=outcome_id)
+    try:
+        crud.outcome.remove(db=db, id=outcome_id)
+    except DatabaseError as exc:
+        logger.error("Failed to delete outcome %s: %s", outcome_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to delete outcome")
     return {"detail": "Outcome deleted"}
 
 
@@ -422,7 +503,11 @@ def add_reflection(
     data = reflection_in.model_dump(exclude_none=True)
     data["application_id"] = id
 
-    result = crud.reflection.create(db=db, data=data)
+    try:
+        result = crud.reflection.create(db=db, data=data)
+    except DatabaseError as exc:
+        logger.error("Failed to create reflection for application %s: %s", id, exc)
+        raise HTTPException(status_code=500, detail="Failed to add reflection")
 
     log_activity(
         db,
@@ -447,12 +532,20 @@ def update_reflection(
 ) -> Any:
     """Update a reflection."""
     _verify_ownership(db, current_user, id)
-    existing = crud.reflection.get(db, id=reflection_id)
+    try:
+        existing = crud.reflection.get(db, id=reflection_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch reflection %s: %s", reflection_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch reflection")
     if not existing or existing.get("application_id") != id:
         raise HTTPException(status_code=404, detail="Reflection not found")
-    return crud.reflection.update(
-        db=db, id=reflection_id, data=reflection_in.model_dump(exclude_unset=True)
-    )
+    try:
+        return crud.reflection.update(
+            db=db, id=reflection_id, data=reflection_in.model_dump(exclude_unset=True)
+        )
+    except DatabaseError as exc:
+        logger.error("Failed to update reflection %s: %s", reflection_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update reflection")
 
 
 @router.delete("/{id}/reflection/{reflection_id}")
@@ -465,8 +558,16 @@ def delete_reflection(
 ) -> Any:
     """Delete a reflection."""
     _verify_ownership(db, current_user, id)
-    existing = crud.reflection.get(db, id=reflection_id)
+    try:
+        existing = crud.reflection.get(db, id=reflection_id)
+    except DatabaseError as exc:
+        logger.error("Failed to fetch reflection %s: %s", reflection_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to fetch reflection")
     if not existing or existing.get("application_id") != id:
         raise HTTPException(status_code=404, detail="Reflection not found")
-    crud.reflection.remove(db=db, id=reflection_id)
+    try:
+        crud.reflection.remove(db=db, id=reflection_id)
+    except DatabaseError as exc:
+        logger.error("Failed to delete reflection %s: %s", reflection_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to delete reflection")
     return {"detail": "Reflection deleted"}
