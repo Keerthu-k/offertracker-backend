@@ -15,9 +15,9 @@
 --    CHECK constraint so the DB rejects bad values independently of
 --    the application layer.
 --
--- 3. applied_date is NULLABLE.  "Saved" applications have not been
+-- 3. applied_date is NULLABLE.  "Open" applications have not been
 --    submitted yet, so defaulting to today was semantically wrong.
---    The API auto-sets it on the Saved → Applied transition.
+--    The API auto-sets it on the Open → Applied transition.
 --
 -- 4. follows has a DB-level self-follow guard.
 --
@@ -132,7 +132,7 @@ CREATE INDEX idx_resume_versions_user_id ON resume_versions (user_id);
 -- ============================================================
 -- applied_date is NULLABLE.  It is only meaningful once the user
 -- has actually submitted the application (status = Applied or beyond).
--- The API sets it automatically on the Saved → Applied transition.
+-- The API sets it automatically on the Open → Applied transition.
 -- company_website and experience_level are stored even though the
 -- current API schemas do not expose them; useful for future features.
 -- ============================================================
@@ -168,13 +168,13 @@ CREATE TABLE applications (
                               'Referral', 'Job Board', 'Recruiter', 'Networking',
                               'Career Fair', 'Other'
                           )),
-    status            varchar(20)  NOT NULL DEFAULT 'Saved'
+    status            varchar(20)  NOT NULL DEFAULT 'Open'
                           CONSTRAINT chk_applications_status
                           CHECK (status IN (
-                              'Saved', 'Applied', 'Interviewing',
-                              'Offer', 'Accepted', 'Rejected', 'Withdrawn'
+                              'Open', 'Applied', 'Shortlisted',
+                              'Interview', 'Offer', 'Rejected', 'Closed'
                           )),
-    applied_date      date,                          -- NULL when status = Saved; auto-set on transition
+    applied_date      date,                          -- NULL when status = Open; auto-set on transition
     follow_up_date    date,
     priority          varchar(10)
                           CONSTRAINT chk_applications_priority
@@ -246,7 +246,7 @@ CREATE TABLE outcomes (
     application_id    text         NOT NULL UNIQUE REFERENCES applications(id) ON DELETE CASCADE,
     status            varchar(20)
                           CONSTRAINT chk_outcomes_status
-                          CHECK (status IS NULL OR status IN ('Offer', 'Rejected', 'Withdrawn')),
+                          CHECK (status IS NULL OR status IN ('Offer', 'Rejected', 'Closed')),
     salary            integer
                           CONSTRAINT chk_outcomes_salary CHECK (salary IS NULL OR salary >= 0),
     salary_currency   varchar(3)   NOT NULL DEFAULT 'USD',

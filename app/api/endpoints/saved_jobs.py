@@ -156,7 +156,7 @@ def convert_to_application(
     """Promote a saved job to a full application.
 
     - Creates an application pre-filled with the saved job's data.
-    - Sets the application status to 'Saved' (user has not applied yet).
+    - Sets the application status to 'Open' (user has not applied yet).
     - Marks the saved job status as 'Converted' and records the new
       application ID in converted_to_application_id.
     - Idempotent guard: raises 409 if already converted.
@@ -173,7 +173,7 @@ def convert_to_application(
     app_data: dict = {
         "user_id": current_user["id"],
         "company_name": saved["company_name"],
-        "status": "Saved",
+        "status": "Open",
     }
     # Map fields that exist on applications
     for field in (

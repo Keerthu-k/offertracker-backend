@@ -38,14 +38,14 @@ Progress is surfaced through **milestones**: quiet, automatic markers reached by
 ### Application Lifecycle
 
 ```
-Saved → Applied → Interviewing → Offer → Accepted
-                              ↘ Rejected  (at any point)
-                              ↘ Withdrawn (at any point)
+Open → Applied → Shortlisted → Interview → Offer → Closed
+                                                  ↘ Rejected  (at any point)
+                                                  ↘ Closed    (user withdraws at any point)
 ```
 
 Auto-transitions happen silently:
 - Creating an application with `status: Applied` auto-sets `applied_date` to today.
-- Adding a Stage to an `Applied` application auto-moves it to `Interviewing`.
+- Adding a Stage to an `Applied` application auto-moves it to `Interview`.
 - Posting an Outcome auto-moves the application to `Offer`.
 
 ### Core Application Structure

@@ -5,6 +5,10 @@ Design principles:
 - Only company_name and role_title are required
 - Optional fields match what real job postings actually show
 - Sub-resource Create schemas take application_id from the URL path
+
+Status flow:
+  Open → Applied → Shortlisted → Interview → Offer → Closed
+  At any point → Rejected or Closed
 """
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -81,7 +85,7 @@ class ApplicationStageResponse(BaseModel):
 
 class OutcomeBase(BaseModel):
     """Offer details — only relevant when an offer is received."""
-    status: Optional[str] = Field(None, description="Offer, Rejected, or Withdrawn")
+    status: Optional[str] = Field(None, description="Offer, Rejected, or Closed")
     salary: Optional[int] = Field(None, ge=0, description="Annual base salary offered")
     salary_currency: str = Field(default="USD", max_length=3)
     bonus: Optional[str] = Field(None, description="Sign-on or annual bonus details")
@@ -184,7 +188,7 @@ class ApplicationBase(BaseModel):
     follow_up_date: Optional[date] = Field(None, description="When to follow up next")
     priority: Optional[Priority] = None
     notes: Optional[str] = None
-    status: ApplicationStatus = ApplicationStatus.SAVED
+    status: ApplicationStatus = ApplicationStatus.OPEN
 
 
 class ApplicationCreate(ApplicationBase):
@@ -228,7 +232,7 @@ class ApplicationResponse(BaseModel):
     follow_up_date: Optional[date] = None
     priority: Optional[str] = None
     notes: Optional[str] = None
-    status: str = "Saved"
+    status: str = "Open"
     resume_version_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
