@@ -425,3 +425,10 @@ PYTHONPATH=. pytest tests/ -v
 - **Notifications** — configurable nudges for streak breaks, reminder deadlines, and milestone triggers.
 - **Granular Privacy** — move beyond the current public/private binary to per-resource visibility controls.
 - **Frontend** — a minimal, focused dashboard. The API schema is fully documented in [api_schema_for_frontend.md](api_schema_for_frontend.md) and ready for handoff.
+
+---
+
+## 11. Repositories
+
+- **Backend (this repository)**: [Keerthu-k/offertracker-backend](https://github.com/Keerthu-k/offertracker-backend)
+- **Frontend**: [Keerthu-k/offertracker-web](https://github.com/Keerthu-k/offertracker-web)

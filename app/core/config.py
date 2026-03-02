@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""  # anon key (public)
     SUPABASE_SERVICE_ROLE_KEY: str = ""  # service role key (server-side only, keep secret)
     
+    # Cloudflare Turnstile
+    TURNSTILE_SECRET_KEY: str = ""
+    
     # Supabase JWT secret – found in Supabase Dashboard → Settings → API → JWT Secret
     # Used to verify tokens issued by Supabase Auth
     SUPABASE_JWT_SECRET: str = ""

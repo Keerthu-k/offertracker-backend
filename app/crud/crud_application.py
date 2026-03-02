@@ -63,9 +63,15 @@ class CRUDApplication(CRUDBase):
         for row in rows:
             row["stages"] = row.pop("application_stages", []) or []
             outcomes = row.pop("outcomes", None) or []
-            row["outcome"] = outcomes[0] if outcomes else None
+            row["outcome"] = (
+                outcomes[0] if isinstance(outcomes, list) and outcomes
+                else (outcomes if not isinstance(outcomes, list) else None)
+            )
             reflections_list = row.pop("reflections", None) or []
-            row["reflection"] = reflections_list[0] if reflections_list else None
+            row["reflection"] = (
+                reflections_list[0] if isinstance(reflections_list, list) and reflections_list
+                else (reflections_list if not isinstance(reflections_list, list) else None)
+            )
         return rows
 
 

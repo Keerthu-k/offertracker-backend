@@ -24,7 +24,7 @@ class CRUDFollow(CRUDBase):
             .maybe_single()
             .execute()
         )
-        return resp.data
+        return resp.data if resp else None
 
     def get_followers(
         self, db: Client, user_id: str, skip: int = 0, limit: int = 50
