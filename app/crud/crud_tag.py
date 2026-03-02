@@ -35,7 +35,7 @@ class CRUDTag(CRUDBase):
             .maybe_single()
             .execute()
         )
-        return resp.data
+        return resp.data if resp else None
 
     def count_user_tags(self, db: Client, user_id: str) -> int:
         resp = (

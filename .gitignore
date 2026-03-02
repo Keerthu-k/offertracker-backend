@@ -6,3 +6,4 @@ api_schema_for_frontend.md
 *.db
 .env
 .vscode/
+seed_data.py

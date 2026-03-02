@@ -18,7 +18,7 @@ class CRUDUser(CRUDBase):
             .maybe_single()
             .execute()
         )
-        return resp.data
+        return resp.data if resp else None
 
     def get_by_username(self, db: Client, username: str) -> Optional[Dict[str, Any]]:
         resp = (
@@ -28,7 +28,7 @@ class CRUDUser(CRUDBase):
             .maybe_single()
             .execute()
         )
-        return resp.data
+        return resp.data if resp else None
 
     def ensure_profile(
         self,
