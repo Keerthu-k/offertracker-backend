@@ -2,11 +2,13 @@
 
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from supabase import Client
 
-from app.core.database import get_supabase
+from app.core.config import settings
+from app.core.database import get_supabase, get_supabase_admin
 from app.core.logging import logger
 from app.crud.crud_user import user as crud_user
 from app.crud.crud_gamification import (
@@ -22,14 +24,52 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: dict
 
+class RegisterResponse(BaseModel):
+    message: str
+    user: dict
 
-@router.post("/register", response_model=TokenResponse, status_code=201)
+
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+
+def _verify_turnstile(token: str) -> None:
+    """Verify a Cloudflare Turnstile token. Raises HTTPException on failure."""
+    if not settings.TURNSTILE_SECRET_KEY:
+        logger.warning("TURNSTILE_SECRET_KEY not set – skipping CAPTCHA verification")
+        return
+
+    try:
+        resp = httpx.post(
+            TURNSTILE_VERIFY_URL,
+            data={
+                "secret": settings.TURNSTILE_SECRET_KEY,
+                "response": token,
+            },
+            timeout=10,
+        )
+        result = resp.json()
+    except Exception as exc:
+        logger.error("Turnstile verification request failed: %s", exc)
+        raise HTTPException(status_code=500, detail="CAPTCHA verification failed")
+
+    if not result.get("success"):
+        logger.warning("Turnstile verification failed: %s", result)
+        raise HTTPException(status_code=400, detail="CAPTCHA verification failed. Please try again.")
+
+
+@router.post("/register", response_model=RegisterResponse, status_code=201)
 def register(
     *,
     db: Client = Depends(get_supabase),
+    admin_db: Client = Depends(get_supabase_admin),
     user_in: UserRegister,
 ) -> Any:
     """Register a new user account via Supabase Auth."""
+
+    # 0. Verify Turnstile CAPTCHA token
+    if user_in.turnstileToken:
+        _verify_turnstile(user_in.turnstileToken)
+
     try:
         # Check if username exists in public schema first before talking to Supabase Auth
         if crud_user.get_by_username(db, user_in.username):
@@ -67,10 +107,10 @@ def register(
 
     user_id = auth_user.id
 
-    # Ensure profile exists (trigger-first, API fallback if trigger not present yet).
+    # Ensure profile exists – use admin client to bypass RLS.
     try:
         user_row = crud_user.ensure_profile(
-            db,
+            admin_db,
             user_id=user_id,
             email=user_in.email,
             username=user_in.username,
@@ -83,18 +123,18 @@ def register(
     # Award the "Getting Started" milestone
     try:
         getting_started = crud_milestone.get_by_field(
-            db, field="name", value="Getting Started"
+            admin_db, field="name", value="Getting Started"
         )
         if getting_started:
-            crud_user_milestone.award(db, user_row["id"], getting_started["id"])
+            crud_user_milestone.award(admin_db, user_row["id"], getting_started["id"])
     except Exception:
         pass  # Non-critical
 
     logger.info("User registered: %s (%s)", user_in.username, user_in.email)
 
+    # 2. Return success message asking the user to verify their email
     return {
-        "access_token": auth_response.session.access_token if auth_response.session else "",
-        "token_type": "bearer",
+        "message": "Account created. Verify your email to continue.",
         "user": user_row
     }
 
