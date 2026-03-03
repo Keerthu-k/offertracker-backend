@@ -6,8 +6,9 @@ from datetime import datetime, date
 class UserRegister(BaseModel):
     email: str = Field(..., max_length=255)
     username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = Field(..., min_length=8, max_length=128)
     display_name: Optional[str] = Field(None, max_length=100)
+    turnstileToken: Optional[str] = None
 
 
 class UserLogin(BaseModel):

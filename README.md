@@ -431,4 +431,4 @@ PYTHONPATH=. pytest tests/ -v
 ## 11. Repositories
 
 - **Backend (this repository)**: [Keerthu-k/offertracker-backend](https://github.com/Keerthu-k/offertracker-backend)
-- **Frontend**: [Keerthu-k/offertracker-web](https://github.com/Keerthu-k/offertracker-web)
+- **Frontend**: [Keerthu-k/offertracker](https://github.com/Keerthu-k/offertracker)
